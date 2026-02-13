@@ -76,6 +76,23 @@ Game.Player = (function () {
   function update(dt) {
     if (!player.alive) return;
 
+    // Combat cooldowns
+    if (player.attackTimer > 0) player.attackTimer -= dt;
+    if (player.combatCooldown > 0) player.combatCooldown -= dt;
+    if (player.dodgeCooldown > 0) player.dodgeCooldown -= dt;
+    if (player.hitCooldown > 0) player.hitCooldown -= dt;
+
+    // Bleeding still ticks while dodging
+    if (player.bleeding > 0) {
+      player.health -= player.bleeding * dt;
+      player.bleeding = Math.max(0, player.bleeding - 0.5 * dt);
+      if (player.health <= 0) {
+        player.health = 0;
+        player.alive = false;
+        return;
+      }
+    }
+
     var input = Game.Input.getMovement();
     var moving = input.x !== 0 || input.y !== 0;
 
@@ -98,23 +115,6 @@ Game.Player = (function () {
       player.stamina = Math.min(player.maxStamina, player.stamina + player.staminaRegen * dt);
     }
 
-    // Bleeding
-    if (player.bleeding > 0) {
-      player.health -= player.bleeding * dt;
-      player.bleeding = Math.max(0, player.bleeding - 0.5 * dt);
-      if (player.health <= 0) {
-        player.health = 0;
-        player.alive = false;
-        return;
-      }
-    }
-
-    // Combat cooldowns
-    if (player.attackTimer > 0) player.attackTimer -= dt;
-    if (player.combatCooldown > 0) player.combatCooldown -= dt;
-    if (player.dodgeCooldown > 0) player.dodgeCooldown -= dt;
-    if (player.hitCooldown > 0) player.hitCooldown -= dt;
-
     // Movement
     if (player.attackTimer <= 0 && !player.blocking) {
       var speedMod = 1.0;
@@ -130,6 +130,8 @@ Game.Player = (function () {
       var spd = player.speed * speedMod;
 
       if (moving) {
+        player.vx = input.x * spd;
+        player.vy = input.y * spd;
         movePlayer(input.x * spd * dt, input.y * spd * dt);
         var a = Math.atan2(input.y, input.x);
         player.facing = U.dirFromAngle(a);
@@ -141,6 +143,9 @@ Game.Player = (function () {
             gainSkill('stealth', 0.002 * dt);
           }
         }
+      } else {
+        player.vx = 0;
+        player.vy = 0;
       }
     }
 
@@ -197,6 +202,21 @@ Game.Player = (function () {
 
   function startDodge() {
     if (player.dodgeCooldown > 0 || player.stamina < 20 || !player.alive) return false;
+
+    // Set dodge direction from current input, movement velocity, then facing fallback
+    var input = Game.Input.getMovement();
+    if (input.x !== 0 || input.y !== 0) {
+      player.vx = input.x;
+      player.vy = input.y;
+    } else {
+      var speed = Math.sqrt(player.vx * player.vx + player.vy * player.vy);
+      if (speed < 0.1) {
+        var fv = getFacingVector();
+        player.vx = fv.x;
+        player.vy = fv.y;
+      }
+    }
+
     player.stamina -= 20;
     player.dodging = true;
     player.dodgeTimer = 0.25;
@@ -267,6 +287,15 @@ Game.Player = (function () {
       'SE': Math.PI / 4, 'SW': 3 * Math.PI / 4
     };
     return { angle: facingAngles[player.facing] || 0, width: Math.PI / 2 };
+  }
+
+  function getFacingVector() {
+    var m = {
+      'N': { x: 0, y: -1 }, 'S': { x: 0, y: 1 }, 'E': { x: 1, y: 0 }, 'W': { x: -1, y: 0 },
+      'NE': { x: 0.7071, y: -0.7071 }, 'NW': { x: -0.7071, y: -0.7071 },
+      'SE': { x: 0.7071, y: 0.7071 }, 'SW': { x: -0.7071, y: 0.7071 }
+    };
+    return m[player.facing] || { x: 1, y: 0 };
   }
 
   function addItem(item) {
