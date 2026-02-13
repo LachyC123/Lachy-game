@@ -105,44 +105,11 @@ Game.NPC = (function () {
         { start: 18, end: 21, state: STATE.SOCIALIZE },
         { start: 21, end: 5, state: STATE.SLEEP }
       ]
-    },
-    healer: {
-      label: 'Healer',
-      schedule: [
-        { start: 6, end: 7, state: STATE.TRAVEL, target: 'work' },
-        { start: 7, end: 12, state: STATE.WORK },
-        { start: 12, end: 14, state: STATE.SOCIALIZE },
-        { start: 14, end: 19, state: STATE.WORK },
-        { start: 19, end: 22, state: STATE.IDLE },
-        { start: 22, end: 6, state: STATE.SLEEP }
-      ]
-    },
-    hunter: {
-      label: 'Hunter',
-      schedule: [
-        { start: 4, end: 6, state: STATE.TRAVEL, target: 'work' },
-        { start: 6, end: 14, state: STATE.WORK },
-        { start: 14, end: 16, state: STATE.TRAVEL, target: 'home' },
-        { start: 16, end: 20, state: STATE.SOCIALIZE },
-        { start: 20, end: 4, state: STATE.SLEEP }
-      ]
-    },
-    miner: {
-      label: 'Miner',
-      schedule: [
-        { start: 5, end: 6, state: STATE.TRAVEL, target: 'work' },
-        { start: 6, end: 15, state: STATE.WORK },
-        { start: 15, end: 17, state: STATE.TRAVEL, target: 'home' },
-        { start: 17, end: 21, state: STATE.SOCIALIZE },
-        { start: 21, end: 5, state: STATE.SLEEP }
-      ]
     }
   };
 
   var PERSONALITIES = ['brave', 'cowardly', 'friendly', 'hostile', 'greedy', 'honest', 'suspicious', 'calm'];
-  var SOCIAL_CLASSES = { king: 5, noble: 4, guard: 3, merchant: 3, blacksmith: 2, tavernKeeper: 2, healer: 2, farmer: 1, villager: 1, woodcutter: 1, hunter: 1, miner: 1, bandit: 0 };
-  var LIFESTYLES = ['family', 'ambitious', 'devout', 'frugal', 'hedonist', 'outdoorsy', 'scholarly', 'community'];
-  var RELATIONSHIP_TYPES = ['family', 'friend', 'rival', 'coworker', 'partner'];
+  var SOCIAL_CLASSES = { king: 5, noble: 4, guard: 3, merchant: 3, blacksmith: 2, tavernKeeper: 2, farmer: 1, villager: 1, woodcutter: 1, bandit: 0 };
 
   function createNPC(opts) {
     var gender = opts.gender || (U.rng() < 0.5 ? 'male' : 'female');
@@ -185,8 +152,6 @@ Game.NPC = (function () {
       // Relationships
       playerRelation: opts.playerRelation || 0, // -100 to 100
       faction: opts.faction || 'civilian',
-      lifestyle: opts.lifestyle || pickLifestyle(opts.job),
-      relationships: opts.relationships || [],
       // Memory
       memory: [],
       lastSawPlayer: -1,
@@ -232,55 +197,7 @@ Game.NPC = (function () {
       case 'bandit': return '#3a3a3a';
       case 'farmer': return '#6a5a3a';
       case 'woodcutter': return '#5a4a2a';
-      case 'healer': return '#2f7a6d';
-      case 'hunter': return '#4a5f2c';
-      case 'miner': return '#565656';
       default: return '#5a5040';
-    }
-  }
-
-  function getJobLabel(job) {
-    return JOBS[job] ? JOBS[job].label : (job ? job.charAt(0).toUpperCase() + job.slice(1) : 'Commoner');
-  }
-
-  function pickLifestyle(job) {
-    if (job === 'bandit') return U.pick(['hedonist', 'ambitious', 'outdoorsy']);
-    if (job === 'king' || job === 'noble') return U.pick(['ambitious', 'devout', 'hedonist']);
-    if (job === 'guard') return U.pick(['community', 'devout', 'family']);
-    if (job === 'healer') return U.pick(['scholarly', 'community', 'devout']);
-    if (job === 'hunter' || job === 'woodcutter') return U.pick(['outdoorsy', 'frugal', 'family']);
-    if (job === 'merchant') return U.pick(['ambitious', 'frugal', 'community']);
-    return U.pick(LIFESTYLES);
-  }
-
-  function buildSocialRelationships() {
-    for (var i = 0; i < npcs.length; i++) {
-      npcs[i].relationships = [];
-    }
-
-    for (var i = 0; i < npcs.length; i++) {
-      var a = npcs[i];
-      var candidates = npcs.filter(function (n) {
-        return n.id !== a.id && (n.faction === a.faction || n.currentLocation === a.currentLocation);
-      });
-
-      var relCount = Math.min(candidates.length, U.randInt(1, 3));
-      for (var r = 0; r < relCount; r++) {
-        if (candidates.length === 0) break;
-        var b = candidates.splice(U.randInt(0, candidates.length - 1), 1)[0];
-        var type = U.pick(RELATIONSHIP_TYPES);
-        if (a.job === b.job) type = 'coworker';
-        if (a.age > 45 && b.age < 25 && U.rng() < 0.2) type = 'family';
-
-        var affinity = U.randInt(-35, 35);
-        if (type === 'friend' || type === 'family' || type === 'partner') affinity = U.randInt(15, 60);
-        if (type === 'rival') affinity = U.randInt(-60, -15);
-
-        a.relationships.push({ withId: b.id, type: type, affinity: affinity });
-        if (!b.relationships.some(function (br) { return br.withId === a.id; })) {
-          b.relationships.push({ withId: a.id, type: type, affinity: affinity + U.randInt(-8, 8) });
-        }
-      }
     }
   }
 
@@ -291,7 +208,6 @@ Game.NPC = (function () {
     spatialHash = new U.SpatialHash(128);
     U.resetNames();
     spawnAllNPCs();
-    buildSocialRelationships();
   }
 
   function spawnAllNPCs() {
@@ -436,12 +352,12 @@ Game.NPC = (function () {
       });
     }
 
-    // Village shop keeper (Millhaven Mercantile)
+    // Village shop keeper
     createNPC({
       name: { first: 'Maren', last: 'Cooper', full: 'Maren Cooper' },
       job: 'merchant', gender: 'female', age: 34,
       x: (mhx + 6) * TS, y: (mhy + 1) * TS,
-      home: { x: (mhx + 8) * TS, y: (mhy + 5) * TS },
+      home: { x: (mhx + 5) * TS, y: (mhy + 4) * TS },
       work: { x: (mhx + 6) * TS, y: (mhy + 1) * TS },
       faction: 'millhaven', personality: 'friendly',
       playerRelation: 5, location: 'millhaven',
@@ -453,32 +369,8 @@ Game.NPC = (function () {
       ]
     });
 
-    // Millhaven tavern keeper
-    createNPC({
-      name: { first: 'Irena', last: 'Malt', full: 'Irena Malt' },
-      job: 'tavernKeeper', gender: 'female', age: 39,
-      x: mhx * TS, y: (mhy - 7) * TS,
-      home: { x: (mhx + 1) * TS, y: (mhy - 5) * TS },
-      work: { x: mhx * TS, y: (mhy - 7) * TS },
-      faction: 'millhaven', personality: 'friendly',
-      playerRelation: 4, location: 'millhaven',
-      inventory: [
-        { id: 'ale', name: 'Ale', type: 'food', value: 3, healAmount: 5 },
-        { id: 'stew', name: 'Hunters Stew', type: 'food', value: 5, healAmount: 20 },
-        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 }
-      ]
-    });
-
-    // Villagers and specialist jobs
-    createNPC({
-      name: { first: 'Sera', last: 'Willow', full: 'Sera Willow' },
-      job: 'healer', gender: 'female', age: 29,
-      x: (mhx + 1) * TS, y: (mhy + 7) * TS,
-      home: { x: (mhx + 2) * TS, y: (mhy + 8) * TS },
-      work: { x: (mhx + 1) * TS, y: (mhy + 7) * TS },
-      faction: 'millhaven', location: 'millhaven', personality: 'friendly'
-    });
-    for (var i = 0; i < 2; i++) {
+    // Villagers
+    for (var i = 0; i < 3; i++) {
       createNPC({
         job: 'villager', age: U.randInt(16, 55),
         x: (mhx - 2 + i * 3) * TS, y: (mhy - 1 + i) * TS,
@@ -512,57 +404,27 @@ Game.NPC = (function () {
     });
 
     // Thornfield villagers
-    createNPC({
-      name: { first: 'Dain', last: 'Rowe', full: 'Dain Rowe' },
-      job: 'hunter', gender: 'male', age: 31,
-      x: (tfx - 4) * TS, y: (tfy + 3) * TS,
-      home: { x: (tfx - 6) * TS, y: (tfy + 4) * TS },
-      work: { x: (tfx + 1) * TS, y: (tfy + 7) * TS },
-      faction: 'thornfield', location: 'thornfield'
-    });
-    createNPC({
-      name: { first: 'Bran', last: 'Coal', full: 'Bran Coal' },
-      job: 'miner', gender: 'male', age: 41,
-      x: (tfx + 3) * TS, y: (tfy + 3) * TS,
-      home: { x: (tfx + 5) * TS, y: (tfy + 5) * TS },
-      work: { x: (tfx + 11) * TS, y: (tfy + 8) * TS },
-      faction: 'thornfield', location: 'thornfield', personality: 'calm'
-    });
-    createNPC({
-      job: 'villager', age: U.randInt(18, 50),
-      x: (tfx + 1) * TS, y: (tfy + 2) * TS,
-      home: { x: (tfx + 2) * TS, y: (tfy + 4) * TS },
-      work: { x: (tfx + 1) * TS, y: tfy * TS },
-      faction: 'thornfield', location: 'thornfield'
-    });
+    for (var i = 0; i < 3; i++) {
+      createNPC({
+        job: 'villager', age: U.randInt(18, 50),
+        x: (tfx - 3 + i * 4) * TS, y: (tfy + 2) * TS,
+        home: { x: (tfx - 5 + i * 8) * TS, y: (tfy + 4) * TS },
+        work: { x: (tfx - 2 + i * 3) * TS, y: tfy * TS },
+        faction: 'thornfield', location: 'thornfield'
+      });
+    }
 
-    // Thornfield shop (trading post)
+    // Thornfield shop
     createNPC({
       job: 'merchant', age: U.randInt(25, 45),
       x: (tfx + 6) * TS, y: (tfy + 1) * TS,
-      home: { x: (tfx + 8) * TS, y: (tfy + 5) * TS },
+      home: { x: (tfx + 5) * TS, y: (tfy + 4) * TS },
       work: { x: (tfx + 6) * TS, y: (tfy + 1) * TS },
       faction: 'thornfield', location: 'thornfield',
       inventory: [
         { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 },
         { id: 'wood', name: 'Bundle of Wood', type: 'trade', value: 5 },
         { id: 'hatchet', name: 'Hatchet', type: 'weapon', damage: 10, speed: 1.0, value: 15 }
-      ]
-    });
-
-    // Thornfield tavern keeper
-    createNPC({
-      name: { first: 'Tobin', last: 'Rook', full: 'Tobin Rook' },
-      job: 'tavernKeeper', gender: 'male', age: 43,
-      x: tfx * TS, y: (tfy - 7) * TS,
-      home: { x: (tfx + 1) * TS, y: (tfy - 5) * TS },
-      work: { x: tfx * TS, y: (tfy - 7) * TS },
-      faction: 'thornfield', personality: 'honest',
-      playerRelation: 3, location: 'thornfield',
-      inventory: [
-        { id: 'ale', name: 'Ale', type: 'food', value: 3, healAmount: 5 },
-        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 },
-        { id: 'stew', name: 'Venison Stew', type: 'food', value: 6, healAmount: 22 }
       ]
     });
 
@@ -1204,22 +1066,6 @@ Game.NPC = (function () {
         barks.push('The guards are on alert.');
       }
     }
-
-    if (npc.lifestyle === 'family') barks.push('I should get home to my family soon.', 'Family comes first.');
-    if (npc.lifestyle === 'ambitious') barks.push('One day I will rise above this station.', 'There is always a better opportunity.');
-    if (npc.lifestyle === 'devout') barks.push('May the gods watch over us.', 'I keep to my prayers and my work.');
-    if (npc.lifestyle === 'outdoorsy') barks.push('The fresh air clears the mind.', 'I would rather be in the wilds than inside.');
-
-    if (npc.relationships && npc.relationships.length > 0 && U.rng() < 0.3) {
-      var rel = U.pick(npc.relationships);
-      var other = npcs[rel.withId];
-      if (other) {
-        if (rel.type === 'friend') barks.push(other.name.first + ' is good company.');
-        if (rel.type === 'rival') barks.push('I still do not trust ' + other.name.first + '.');
-        if (rel.type === 'family') barks.push('I should check in on ' + other.name.first + '.');
-      }
-    }
-
     if (npc.faction === 'bandits') {
       barks = ['When is the next raid?', 'I need more coin.', 'Lothar says we move at dawn.', 'This forest hides us well.'];
     }
@@ -1328,8 +1174,7 @@ Game.NPC = (function () {
       return {
         id: n.id, x: n.x, y: n.y, health: n.health, alive: n.alive,
         state: n.state, playerRelation: n.playerRelation, memory: n.memory,
-        bleeding: n.bleeding, bounty: n.bounty || 0,
-        lifestyle: n.lifestyle, relationships: n.relationships
+        bleeding: n.bleeding, bounty: n.bounty || 0
       };
     });
   }
@@ -1341,8 +1186,6 @@ Game.NPC = (function () {
       n.x = d.x; n.y = d.y; n.health = d.health; n.alive = d.alive;
       n.state = d.state; n.playerRelation = d.playerRelation;
       n.memory = d.memory || []; n.bleeding = d.bleeding || 0;
-      n.lifestyle = d.lifestyle || n.lifestyle;
-      n.relationships = d.relationships || n.relationships || [];
     }
   }
 
@@ -1353,7 +1196,6 @@ Game.NPC = (function () {
     getNearest: getNearest, takeDamage: takeDamage,
     addMemory: addMemory, getByFaction: getByFaction,
     setBark: setBark, setSpeech: setSpeech,
-    getJobLabel: getJobLabel,
     getSerializable: getSerializable, loadState: loadState
   };
 })();
