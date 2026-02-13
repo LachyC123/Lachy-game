@@ -201,6 +201,16 @@ Game.UI = (function () {
       ctx.fillText('BLEEDING', x, y + barH + 14);
     }
 
+    // Weather icon (subtle)
+    if (Game.Ambient) {
+      var weather = Game.Ambient.getWeather();
+      var wy = y + barH + (p.bleeding > 0 ? 28 : 14);
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = 'rgba(200,200,220,0.6)';
+      var wIcons = { clear: 'Clear', cloudy: 'Cloudy', overcast: 'Overcast', rain: 'Raining', storm: 'Storm' };
+      ctx.fillText(wIcons[weather.type] || '', x, wy);
+    }
+
     // Bounty
     if (p.bounty > 0) {
       ctx.fillStyle = '#cc8030';
@@ -540,28 +550,38 @@ Game.UI = (function () {
     var cy = Math.floor(ty / Game.World.CHUNK_SIZE);
 
     ctx.font = '11px monospace';
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(5, H - 120, 200, 115);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(5, H - 165, 220, 160);
     ctx.fillStyle = '#0f0';
     ctx.textAlign = 'left';
 
-    var y = H - 105;
-    ctx.fillText('FPS: ' + (Game.fps || 0), 10, y); y += 14;
-    ctx.fillText('Pos: ' + Math.round(p.x) + ',' + Math.round(p.y), 10, y); y += 14;
-    ctx.fillText('Tile: ' + tx + ',' + ty, 10, y); y += 14;
-    ctx.fillText('Chunk: ' + cx + ',' + cy, 10, y); y += 14;
+    var y = H - 152;
+    ctx.fillText('FPS: ' + (Game.fps || 0), 10, y); y += 13;
+    ctx.fillText('Pos: ' + Math.round(p.x) + ',' + Math.round(p.y) + '  Tile:' + tx + ',' + ty, 10, y); y += 13;
+    ctx.fillText('Chunk: ' + cx + ',' + cy, 10, y); y += 13;
 
     var npcs = Game.NPC.getNPCs();
     var aliveCount = 0;
     for (var i = 0; i < npcs.length; i++) if (npcs[i].alive) aliveCount++;
-    ctx.fillText('NPCs: ' + aliveCount + '/' + npcs.length, 10, y); y += 14;
+    ctx.fillText('NPCs: ' + aliveCount + '/' + npcs.length, 10, y); y += 13;
 
     var loc = Game.World.getLocationAt(p.x, p.y);
-    ctx.fillText('Location: ' + loc, 10, y); y += 14;
+    ctx.fillText('Location: ' + loc, 10, y); y += 13;
 
     var hour = Game.time ? Math.floor((Game.time / 60) % 24) : 0;
-    ctx.fillText('Hour: ' + hour + ' Rep: ' + p.reputation.global, 10, y); y += 14;
-    ctx.fillText('Bounty: ' + p.bounty + ' Kills: ' + p.killCount, 10, y);
+    ctx.fillText('Hour: ' + hour + ' Day: ' + (Game.day || 1), 10, y); y += 13;
+    ctx.fillText('Rep: ' + p.reputation.global + ' Bounty: ' + p.bounty, 10, y); y += 13;
+
+    // Weather & wildlife
+    if (Game.Ambient) {
+      var w = Game.Ambient.getWeather();
+      ctx.fillStyle = '#8cf';
+      ctx.fillText('Weather: ' + w.type + ' (' + (w.intensity * 100 | 0) + '%) Wind:' + w.wind.toFixed(1), 10, y); y += 13;
+      ctx.fillText('Wildlife: ' + Game.Ambient.getWildlife().length, 10, y); y += 13;
+    }
+
+    ctx.fillStyle = '#fc8';
+    ctx.fillText('Skills: Sw' + (p.skills.sword|0) + ' Sp' + (p.skills.speech|0) + ' St' + (p.skills.stealth|0), 10, y);
 
     ctx.restore();
   }

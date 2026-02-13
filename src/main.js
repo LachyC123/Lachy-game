@@ -53,6 +53,7 @@ Game.Main = (function () {
     // Initialize all systems
     Game.World.init(42);
     Game.Economy.init();
+    Game.Ambient.init();
     Game.Player.init();
     Game.NPC.init();
     Game.Combat.init();
@@ -127,6 +128,8 @@ Game.Main = (function () {
 
     Game.NPC.update(dt);
     Game.Law.update(dt);
+    Game.Ambient.update(dt);
+    Game.Ambient.updateConversations(dt);
     Game.Save.update(dt);
     Game.Input.update();
     Game.UI.update(dt);

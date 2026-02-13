@@ -166,12 +166,28 @@ Game.Dialogue = (function () {
         rumors.push('I heard there was trouble recently. The guards are on high alert.');
       }
     }
+    // Pull from world news system
+    if (Game.Ambient && Game.Ambient.getWorldNews) {
+      var news = Game.Ambient.getWorldNews();
+      for (var i = Math.max(0, news.length - 3); i < news.length; i++) {
+        rumors.push(news[i]);
+      }
+    }
+    // Weather-aware rumors
+    if (Game.Ambient) {
+      var w = Game.Ambient.getWeather();
+      if (w.type === 'storm') rumors.push('This storm is fierce. I hope the roads hold.');
+      if (w.type === 'rain') rumors.push('The rains have been heavy. The river may flood.');
+    }
     // Generic rumors
     rumors.push('They say the eastern forest is home to a band of outlaws led by a man called Lothar.');
     rumors.push('The King grows old. Some nobles whisper about succession.');
     rumors.push('Grain prices have been rising. Hard times ahead.');
     rumors.push('A merchant was robbed on the road last week.');
     rumors.push('The guards have been cracking down lately. Best to stay honest.');
+    rumors.push('I hear deer have been seen near the village. Good hunting perhaps.');
+    rumors.push('The graveyard outside town gives me chills at night.');
+    rumors.push('There is talk of expanding the town walls. More settlers arriving.');
 
     var pRep = Game.Player.getState().reputation.global;
     if (pRep < -10) {
