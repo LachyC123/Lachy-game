@@ -670,13 +670,28 @@ Game.Renderer = (function () {
       ctx.fill();
     }
 
-    // Name label when close
+    // Name + life activity labels when close
     var p = Game.Player.getState();
-    if (U.dist(npc.x, npc.y, p.x, p.y) < 80) {
-      ctx.font = '9px sans-serif';
-      ctx.fillStyle = 'rgba(220,210,180,0.85)';
+    var distToPlayer = U.dist(npc.x, npc.y, p.x, p.y);
+    if (distToPlayer < 120) {
+      var labelY = bodyY - getNameOffset(npc);
       ctx.textAlign = 'center';
-      ctx.fillText(npc.name.first, sx, bodyY - getNameOffset(npc));
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = 'rgba(230,220,195,0.92)';
+      ctx.fillText(npc.name.first, sx, labelY);
+
+      var jobText = Game.NPC.getJobLabel ? Game.NPC.getJobLabel(npc.job) : npc.job;
+      ctx.font = '8px sans-serif';
+      ctx.fillStyle = 'rgba(205,175,105,0.88)';
+      ctx.fillText(jobText, sx, labelY + 10);
+
+      if (distToPlayer < 95 && Game.NPC.getActivityLabel) {
+        var activity = Game.NPC.getActivityLabel(npc);
+        if (activity) {
+          ctx.fillStyle = 'rgba(185,210,225,0.82)';
+          ctx.fillText(activity, sx, labelY + 20);
+        }
+      }
     }
 
     // Sleep zzz
@@ -735,6 +750,29 @@ Game.Renderer = (function () {
         ctx.beginPath();
         ctx.moveTo(0, 10); ctx.lineTo(5, 12); ctx.lineTo(0, 14);
         ctx.fill();
+        ctx.restore();
+      } else if (npc.job === 'healer') {
+        // Potion vial swirl
+        ctx.fillStyle = '#2f7a6d';
+        ctx.fillRect(sx + 4, bodyY + 1, 3, 5);
+        ctx.fillStyle = '#9be0d6';
+        ctx.fillRect(sx + 4, bodyY + 4 + Math.sin(toolPhase * 2) * 1.5, 3, 2);
+      } else if (npc.job === 'hunter') {
+        // Bow draw pose
+        ctx.strokeStyle = '#6b4a25';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(sx + 6, bodyY - 1, 4, -1.2, 1.2);
+        ctx.stroke();
+      } else if (npc.job === 'miner') {
+        // Pickaxe motion
+        ctx.save();
+        ctx.translate(sx + 6, bodyY - 3);
+        ctx.rotate(-0.8 + toolSwing * 1.4);
+        ctx.fillStyle = '#6a4a20';
+        ctx.fillRect(0, 0, 2, 12);
+        ctx.fillStyle = '#8f959b';
+        ctx.fillRect(-3, 1, 8, 2);
         ctx.restore();
       }
     }
