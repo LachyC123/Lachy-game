@@ -1221,6 +1221,94 @@ Game.World = (function () {
         ctx.fillRect(px + 18, py + 8, 8, 2);
         break;
 
+      case D.GRAVESTONE:
+        // Stone slab
+        ctx.fillStyle = '#8a8a88';
+        ctx.fillRect(px + 10, py + 8, 12, 16);
+        // Rounded top
+        ctx.beginPath();
+        ctx.arc(px + 16, py + 8, 6, Math.PI, Math.PI * 2);
+        ctx.fill();
+        // Cross etching
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(px + 16, py + 6); ctx.lineTo(px + 16, py + 16);
+        ctx.moveTo(px + 13, py + 10); ctx.lineTo(px + 19, py + 10);
+        ctx.stroke();
+        // Moss
+        ctx.fillStyle = 'rgba(60,90,40,0.3)';
+        ctx.fillRect(px + 10, py + 20, 5, 4);
+        // Ground mound
+        ctx.fillStyle = 'rgba(80,65,40,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(px + 16, py + 26, 8, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+
+      case D.CART:
+        // Wheels
+        ctx.fillStyle = '#5a3a18';
+        ctx.beginPath();
+        ctx.arc(px + 6, py + 22, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(px + 26, py + 22, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        // Spokes
+        ctx.strokeStyle = '#5a3a18';
+        ctx.lineWidth = 1;
+        for (var sp = 0; sp < 4; sp++) {
+          var a = sp * Math.PI / 2;
+          ctx.beginPath();
+          ctx.moveTo(px + 6, py + 22);
+          ctx.lineTo(px + 6 + Math.cos(a) * 4, py + 22 + Math.sin(a) * 4);
+          ctx.moveTo(px + 26, py + 22);
+          ctx.lineTo(px + 26 + Math.cos(a) * 4, py + 22 + Math.sin(a) * 4);
+          ctx.stroke();
+        }
+        // Cart body
+        ctx.fillStyle = '#7a5a28';
+        ctx.fillRect(px + 3, py + 8, 26, 12);
+        ctx.strokeStyle = '#4a3010';
+        ctx.strokeRect(px + 3, py + 8, 26, 12);
+        // Handle
+        ctx.fillStyle = '#6a4a20';
+        ctx.fillRect(px - 2, py + 14, 6, 2);
+        // Cargo
+        ctx.fillStyle = '#b0a060';
+        ctx.fillRect(px + 6, py + 6, 8, 4);
+        ctx.fillStyle = '#8a6030';
+        ctx.fillRect(px + 16, py + 5, 10, 5);
+        break;
+
+      case D.WATER_BUCKET:
+        // Bucket body
+        ctx.fillStyle = '#6a5028';
+        ctx.beginPath();
+        ctx.moveTo(px + 10, py + 12);
+        ctx.lineTo(px + 8, py + 24);
+        ctx.lineTo(px + 24, py + 24);
+        ctx.lineTo(px + 22, py + 12);
+        ctx.fill();
+        // Metal band
+        ctx.strokeStyle = '#5a5a5a';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(px + 9, py + 16); ctx.lineTo(px + 23, py + 16);
+        ctx.moveTo(px + 8, py + 22); ctx.lineTo(px + 24, py + 22);
+        ctx.stroke();
+        // Handle
+        ctx.strokeStyle = '#5a4a3a';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(px + 16, py + 10, 5, Math.PI, Math.PI * 2);
+        ctx.stroke();
+        // Water inside
+        ctx.fillStyle = 'rgba(60,110,170,0.4)';
+        ctx.fillRect(px + 10, py + 13, 12, 3);
+        break;
+
       case D.PLANTER:
         ctx.fillStyle = '#6a4a2a';
         ctx.fillRect(px + 8, py + 14, 16, 10);
