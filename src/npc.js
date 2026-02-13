@@ -169,6 +169,7 @@ Game.NPC = (function () {
       alive: true,
       state: STATE.IDLE,
       scheduledState: STATE.IDLE,
+      scheduledTarget: 'home',
       stateTimer: 0,
       targetX: 0, targetY: 0,
       hasTarget: false,
@@ -291,6 +292,7 @@ Game.NPC = (function () {
     spatialHash = new U.SpatialHash(128);
     U.resetNames();
     spawnAllNPCs();
+    assignResidentialHomes();
     buildSocialRelationships();
   }
 
@@ -595,6 +597,76 @@ Game.NPC = (function () {
     });
   }
 
+
+
+  function getScheduleTargetPos(npc) {
+    if (npc.scheduledTarget === 'work') return npc.work;
+    return npc.home;
+  }
+
+  function assignResidentialHomes() {
+    var buildings = W.getBuildings ? W.getBuildings() : [];
+    if (!buildings || buildings.length === 0) return;
+
+    function centerPx(b) {
+      return { x: (b.x + b.w * 0.5) * TS, y: (b.y + b.h * 0.5) * TS };
+    }
+
+    var centers = {
+      ashford: { x: 128 * TS, y: 128 * TS },
+      millhaven: { x: 66 * TS, y: 190 * TS },
+      thornfield: { x: 66 * TS, y: 64 * TS },
+      banditCamp: { x: 200 * TS, y: 80 * TS }
+    };
+
+    function nearestSettlement(x, y) {
+      var best = 'ashford';
+      var bestD = Infinity;
+      for (var k in centers) {
+        var c = centers[k];
+        var d = U.distSq(x, y, c.x, c.y);
+        if (d < bestD) { bestD = d; best = k; }
+      }
+      return best;
+    }
+
+    var housesBySettlement = { ashford: [], millhaven: [], thornfield: [] };
+    for (var i = 0; i < buildings.length; i++) {
+      var b = buildings[i];
+      if (b.type !== 'house' && b.type !== 'noble_house') continue;
+      var c = centerPx(b);
+      var st = nearestSettlement(c.x, c.y);
+      if (!housesBySettlement[st]) housesBySettlement[st] = [];
+      housesBySettlement[st].push({ b: b, c: c, occ: 0 });
+    }
+
+    for (var i = 0; i < npcs.length; i++) {
+      var npc = npcs[i];
+      if (!npc.alive) continue;
+      if (npc.faction === 'bandits' || npc.job === 'king') continue;
+
+      var st = npc.location || nearestSettlement(npc.home.x, npc.home.y);
+      var candidates = housesBySettlement[st] || [];
+      if (candidates.length === 0) continue;
+
+      var best = null;
+      var bestScore = Infinity;
+      for (var j = 0; j < candidates.length; j++) {
+        var h = candidates[j];
+        var cap = h.b.type === 'noble_house' ? 3 : 2;
+        if (h.occ >= cap && npc.job !== 'noble') continue;
+        var score = U.distSq(npc.home.x, npc.home.y, h.c.x, h.c.y) + h.occ * 6000;
+        if (npc.job === 'noble' && h.b.type === 'noble_house') score *= 0.6;
+        if (score < bestScore) { bestScore = score; best = h; }
+      }
+
+      if (best) {
+        npc.home = { x: best.c.x, y: best.c.y };
+        best.occ++;
+      }
+    }
+  }
+
   function update(dt) {
     var px = Game.Player.getState().x;
     var py = Game.Player.getState().y;
@@ -622,9 +694,10 @@ Game.NPC = (function () {
         if (npc.scheduledState === STATE.SLEEP) {
           npc.x = U.lerp(npc.x, npc.home.x, 0.01);
           npc.y = U.lerp(npc.y, npc.home.y, 0.01);
-        } else if (npc.scheduledState === STATE.WORK) {
-          npc.x = U.lerp(npc.x, npc.work.x, 0.01);
-          npc.y = U.lerp(npc.y, npc.work.y, 0.01);
+        } else if (npc.scheduledState === STATE.WORK || npc.scheduledState === STATE.TRAVEL) {
+          var schedTarget = getScheduleTargetPos(npc);
+          npc.x = U.lerp(npc.x, schedTarget.x, 0.01);
+          npc.y = U.lerp(npc.y, schedTarget.y, 0.01);
         }
       }
 
@@ -663,6 +736,7 @@ Game.NPC = (function () {
       }
       if (inRange) {
         npc.scheduledState = s.state;
+        npc.scheduledTarget = s.target || (s.state === STATE.WORK || s.state === STATE.PATROL ? 'work' : 'home');
         break;
       }
     }
@@ -799,7 +873,8 @@ Game.NPC = (function () {
         break;
       case STATE.TRAVEL:
         npc.state = STATE.TRAVEL;
-        moveToward(npc, npc.work.x, npc.work.y, dt, 1.0);
+        var travelTarget = getScheduleTargetPos(npc);
+        moveToward(npc, travelTarget.x, travelTarget.y, dt, 1.0);
         break;
     }
 
@@ -1216,6 +1291,20 @@ Game.NPC = (function () {
     return barks.length > 0 ? barks : ['...'];
   }
 
+
+
+  function getActivityLabel(npc) {
+    if (!npc || !npc.alive) return '';
+    if (npc.state === STATE.SLEEP) return 'Sleeping at home';
+    if (npc.state === STATE.WORK) return 'Working as ' + getJobLabel(npc.job);
+    if (npc.state === STATE.PATROL) return 'On patrol duty';
+    if (npc.state === STATE.TRAVEL) return npc.scheduledTarget === 'work' ? 'Going to work' : 'Heading home';
+    if (npc.state === STATE.SOCIALIZE) return 'Socializing';
+    if (npc.state === STATE.FIGHT) return 'In combat';
+    if (npc.state === STATE.FLEE) return 'Fleeing';
+    return 'At home';
+  }
+
   function getNearPlayer(radius) {
     var p = Game.Player.getState();
     return spatialHash.query(p.x, p.y, radius);
@@ -1322,6 +1411,7 @@ Game.NPC = (function () {
     addMemory: addMemory, getByFaction: getByFaction,
     setBark: setBark, setSpeech: setSpeech,
     getJobLabel: getJobLabel,
+    getActivityLabel: getActivityLabel,
     getSerializable: getSerializable, loadState: loadState
   };
 })();
