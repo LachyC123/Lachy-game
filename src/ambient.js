@@ -534,6 +534,38 @@ Game.Ambient = (function () {
           barks.push('*thwack*', 'Good timber.', 'One more and I can rest.',
                      'The forest provides.', 'Mind the splinters.');
           break;
+        case 'carpenter':
+          barks.push('*scrape*', 'This frame needs one more brace.', 'Careful with the grain.',
+                     'A square joint lasts for years.', 'Hand me the mallet.');
+          break;
+        case 'mason':
+          barks.push('Stonework keeps the rain out.', 'Mortar is setting nicely.', 'Another wall to raise.',
+                     'Mind the rubble.', '*tap tap*');
+          break;
+        case 'fisherman':
+          barks.push('Fish were biting at dawn.', 'Need to mend these nets.', 'River current is strong today.',
+                     'The catch feeds half the village.', 'Boats need patching too.');
+          break;
+        case 'baker':
+          barks.push('The oven is blazing hot.', 'Fresh loaves in a moment.', 'Dough needs one more rise.',
+                     'Everyone wants bread by noon.', 'Mind the crust.');
+          break;
+        case 'tailor':
+          barks.push('Hold still for your fitting.', 'This hem needs a clean line.', 'Fine cloth is hard to get.',
+                     'A good stitch saves a coat.', '*snip snip*');
+          break;
+        case 'butcher':
+          barks.push('Sharp knives, steady hands.', 'Nothing from the animal is wasted.', 'Need more curing salt.',
+                     'Order for the tavern is next.', 'Best cuts go quickly.');
+          break;
+        case 'cooper':
+          barks.push('These hoops must sit tight.', 'Leaky casks ruin good ale.', 'Oak staves only.',
+                     'Another barrel almost done.', '*thunk thunk*');
+          break;
+        case 'potter':
+          barks.push('Clay is perfect after rain.', 'Kiln firing soon.', 'Steady at the wheel now.',
+                     'Glaze this one in blue.', 'Careful, that pot is still wet.');
+          break;
       }
     }
 

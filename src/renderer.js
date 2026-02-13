@@ -469,6 +469,49 @@ Game.Renderer = (function () {
       ctx.strokeStyle = '#2a1a0a';
       ctx.lineWidth = 0.5;
       ctx.strokeRect(sx - 4, bodyY - 1, 8, 8);
+    } else if (npc.job === 'carpenter') {
+      // Sawdust apron and tool belt
+      ctx.fillStyle = '#6b4c2a';
+      ctx.fillRect(sx - 4, bodyY - 1, 8, 8);
+      ctx.fillStyle = '#c8b078';
+      ctx.fillRect(sx - 4, bodyY + 1, 8, 1);
+      ctx.fillRect(sx - 3, bodyY + 4, 2, 1);
+      ctx.fillRect(sx + 1, bodyY + 3, 2, 1);
+    } else if (npc.job === 'mason') {
+      ctx.fillStyle = '#6e6e6e';
+      ctx.fillRect(sx - 4, bodyY - 1, 8, 8);
+      ctx.fillStyle = '#b8b8b8';
+      ctx.fillRect(sx - 4, bodyY + 2, 8, 1);
+    } else if (npc.job === 'tailor') {
+      ctx.fillStyle = '#5f2f74';
+      ctx.fillRect(sx - 4, bodyY - 2, 8, 7);
+      ctx.fillStyle = '#d5c56e';
+      ctx.fillRect(sx - 1, bodyY - 2, 2, 7);
+    } else if (npc.job === 'baker') {
+      ctx.fillStyle = '#e5dfcf';
+      ctx.fillRect(sx - 4, bodyY - 1, 8, 8);
+      ctx.fillStyle = '#8c6b3c';
+      ctx.fillRect(sx - 4, bodyY + 3, 8, 1);
+    } else if (npc.job === 'butcher') {
+      ctx.fillStyle = '#7a3a3a';
+      ctx.fillRect(sx - 4, bodyY - 1, 8, 8);
+      ctx.fillStyle = '#d8d8d8';
+      ctx.fillRect(sx - 4, bodyY + 1, 8, 1);
+    } else if (npc.job === 'fisherman') {
+      ctx.fillStyle = '#406282';
+      ctx.fillRect(sx - 4, bodyY - 2, 8, 8);
+      ctx.fillStyle = '#2d4358';
+      ctx.fillRect(sx - 4, bodyY + 3, 8, 2);
+    } else if (npc.job === 'cooper') {
+      ctx.fillStyle = '#6f4d27';
+      ctx.fillRect(sx - 4, bodyY - 1, 8, 8);
+      ctx.fillStyle = '#2f2f2f';
+      ctx.fillRect(sx - 4, bodyY + 2, 8, 1);
+    } else if (npc.job === 'potter') {
+      ctx.fillStyle = '#8a5b45';
+      ctx.fillRect(sx - 4, bodyY - 1, 8, 8);
+      ctx.fillStyle = '#b98a70';
+      ctx.fillRect(sx - 4, bodyY + 2, 8, 1);
     } else if (npc.job === 'noble') {
       // Embroidered trim
       ctx.fillStyle = '#d4a030';
@@ -594,6 +637,30 @@ Game.Renderer = (function () {
       ctx.fillStyle = '#c8a850';
       ctx.fillRect(sx - 7, bodyY - 16, 14, 3);
       ctx.fillRect(sx - 4, bodyY - 19, 8, 3);
+    } else if (npc.job === 'carpenter') {
+      // Simple leather cap
+      ctx.fillStyle = '#5d4022';
+      ctx.beginPath();
+      ctx.arc(sx, bodyY - 13, 5, Math.PI, Math.PI * 2);
+      ctx.fill();
+    } else if (npc.job === 'baker') {
+      // Baker cap
+      ctx.fillStyle = '#efe9d8';
+      ctx.beginPath();
+      ctx.arc(sx, bodyY - 14, 6, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(sx - 5, bodyY - 13, 10, 2);
+    } else if (npc.job === 'fisherman') {
+      // Knit cap
+      ctx.fillStyle = '#2b4e6b';
+      ctx.beginPath();
+      ctx.arc(sx, bodyY - 13, 5, Math.PI, Math.PI * 2);
+      ctx.fill();
+    } else if (npc.job === 'tailor') {
+      // Small brimmed hat
+      ctx.fillStyle = '#4a2a5e';
+      ctx.fillRect(sx - 5, bodyY - 16, 10, 2);
+      ctx.fillRect(sx - 3, bodyY - 19, 6, 3);
     } else if (npc.job === 'bandit') {
       // Hood
       ctx.fillStyle = '#2a2a2a';
@@ -751,6 +818,98 @@ Game.Renderer = (function () {
         ctx.moveTo(0, 10); ctx.lineTo(5, 12); ctx.lineTo(0, 14);
         ctx.fill();
         ctx.restore();
+      } else if (npc.job === 'carpenter') {
+        // Sawing plank animation
+        var sawShift = Math.sin(toolPhase * 1.8) * 3;
+        ctx.fillStyle = '#8b6a3d';
+        ctx.fillRect(sx - 8, bodyY + 8, 12, 2);
+        ctx.save();
+        ctx.translate(sx + 2 + sawShift, bodyY + 5);
+        ctx.rotate(-0.2);
+        ctx.fillStyle = '#9ea4aa';
+        ctx.fillRect(-4, -1, 8, 2);
+        ctx.fillStyle = '#5a3d22';
+        ctx.fillRect(-5, -1, 2, 2);
+        ctx.restore();
+        // Sawdust motes
+        ctx.fillStyle = 'rgba(220,190,110,0.8)';
+        ctx.fillRect(sx + 4, bodyY + 8, 1, 1);
+        if (Math.sin(toolPhase * 2.2) > 0.3) ctx.fillRect(sx + 6, bodyY + 7, 1, 1);
+      } else if (npc.job === 'mason') {
+        // Trowel and stone block
+        ctx.fillStyle = '#8f8f8f';
+        ctx.fillRect(sx - 8, bodyY + 7, 7, 3);
+        ctx.save();
+        ctx.translate(sx + 4, bodyY + 2);
+        ctx.rotate(-0.7 + toolSwing * 1.2);
+        ctx.fillStyle = '#6a4a20';
+        ctx.fillRect(0, 0, 2, 8);
+        ctx.fillStyle = '#b0b0b0';
+        ctx.fillRect(-3, -1, 5, 2);
+        ctx.restore();
+      } else if (npc.job === 'fisherman') {
+        // Casting line movement
+        ctx.strokeStyle = '#6b4a25';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sx + 2, bodyY + 1);
+        ctx.lineTo(sx + 8, bodyY - 6);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(230,230,255,0.6)';
+        ctx.beginPath();
+        ctx.moveTo(sx + 8, bodyY - 6);
+        ctx.lineTo(sx + 10 + Math.sin(toolPhase) * 4, bodyY + 2);
+        ctx.stroke();
+      } else if (npc.job === 'baker') {
+        // Kneading dough motion
+        var knead = Math.sin(toolPhase * 2);
+        ctx.fillStyle = '#d9c38f';
+        ctx.fillRect(sx - 7, bodyY + 8, 10, 2);
+        ctx.fillStyle = '#f0dfb4';
+        ctx.fillRect(sx - 3 + knead, bodyY + 7, 4, 2);
+      } else if (npc.job === 'tailor') {
+        // Needlework motion
+        ctx.strokeStyle = '#d0d0d0';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sx + 2, bodyY + 2);
+        ctx.lineTo(sx + 2 + Math.sin(toolPhase * 3) * 2, bodyY + 8);
+        ctx.stroke();
+        ctx.fillStyle = '#6a3a88';
+        ctx.fillRect(sx - 6, bodyY + 8, 8, 2);
+      } else if (npc.job === 'butcher') {
+        // Cleaver chop animation
+        ctx.save();
+        ctx.translate(sx + 5, bodyY - 1);
+        ctx.rotate(-0.9 + toolSwing * 1.6);
+        ctx.fillStyle = '#7a4a22';
+        ctx.fillRect(0, 0, 2, 8);
+        ctx.fillStyle = '#aeb4ba';
+        ctx.fillRect(-2, -2, 5, 3);
+        ctx.restore();
+      } else if (npc.job === 'cooper') {
+        // Hammering barrel hoop
+        ctx.fillStyle = '#7a5a2f';
+        ctx.fillRect(sx - 7, bodyY + 7, 7, 4);
+        ctx.fillStyle = '#2f2f2f';
+        ctx.fillRect(sx - 7, bodyY + 8, 7, 1);
+        ctx.save();
+        ctx.translate(sx + 4, bodyY + 2);
+        ctx.rotate(-0.8 + toolSwing * 1.5);
+        ctx.fillStyle = '#6a4a20';
+        ctx.fillRect(0, 0, 2, 8);
+        ctx.fillStyle = '#8d8d8d';
+        ctx.fillRect(-2, -2, 4, 2);
+        ctx.restore();
+      } else if (npc.job === 'potter') {
+        // Pottery wheel spin
+        var spin = Math.sin(toolPhase * 3) * 1.5;
+        ctx.fillStyle = '#6f4f3c';
+        ctx.fillRect(sx - 6, bodyY + 9, 8, 1);
+        ctx.fillStyle = '#b48264';
+        ctx.beginPath();
+        ctx.ellipse(sx - 2 + spin * 0.2, bodyY + 7, 2.5, 2, 0, 0, Math.PI * 2);
+        ctx.fill();
       } else if (npc.job === 'healer') {
         // Potion vial swirl
         ctx.fillStyle = '#2f7a6d';
@@ -791,7 +950,7 @@ Game.Renderer = (function () {
 
   function getNameOffset(npc) {
     if (npc.job === 'king') return 28;
-    if (npc.job === 'noble' || npc.job === 'guard' || npc.job === 'farmer') return 22;
+    if (npc.job === 'noble' || npc.job === 'guard' || npc.job === 'farmer' || npc.job === 'carpenter' || npc.job === 'baker' || npc.job === 'fisherman') return 22;
     return 18;
   }
 
