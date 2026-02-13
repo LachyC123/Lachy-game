@@ -217,6 +217,14 @@ Game.UI = (function () {
       ctx.font = '11px sans-serif';
       ctx.fillText('BOUNTY: ' + p.bounty + 'g', x, y + barH + 28);
     }
+
+    // Quick status text
+    var statusY = y + barH + (p.bounty > 0 ? 44 : 30);
+    ctx.fillStyle = 'rgba(220,220,220,0.7)';
+    ctx.font = '10px sans-serif';
+    if (p.inCombat) ctx.fillText('Status: In combat', x, statusY);
+    else if (p.stamina < p.maxStamina * 0.25) ctx.fillText('Status: Exhausted', x, statusY);
+    else ctx.fillText('Status: Stable', x, statusY);
   }
 
   function renderMiniInfo() {
@@ -246,6 +254,12 @@ Game.UI = (function () {
       banditCamp: 'Bandit Camp', forest: 'Forest', wilderness: 'Wilderness'
     };
     ctx.fillText(locNames[loc] || loc, x, y);
+    y += 16;
+
+    // Reputation and combat readiness snapshot
+    ctx.fillText('Rep ' + (p.reputation.global >= 0 ? '+' : '') + p.reputation.global + ' | Kills ' + p.killCount, x, y);
+    y += 16;
+    ctx.fillText('Sw ' + (p.skills.sword | 0) + ' Sp ' + (p.skills.speech | 0) + ' St ' + (p.skills.stealth | 0), x, y);
     y += 16;
 
     // Quick action buttons (mobile-friendly)

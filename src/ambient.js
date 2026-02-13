@@ -69,10 +69,19 @@ Game.Ambient = (function () {
     if (weather.changeTimer >= weather.nextChange) {
       weather.changeTimer = 0;
       weather.nextChange = U.randFloat(120, 500);
-      var newType = U.pick(WEATHER_TYPES);
+      var day = Game.day || 1;
+      var season = day % 40;
+      var seasonalPool = WEATHER_TYPES.slice();
+      // crude seasonal drift to make world feel less static
+      if (season < 10) seasonalPool = seasonalPool.concat(['clear', 'cloudy']);
+      else if (season < 20) seasonalPool = seasonalPool.concat(['cloudy', 'overcast']);
+      else if (season < 30) seasonalPool = seasonalPool.concat(['rain', 'overcast', 'rain']);
+      else seasonalPool = seasonalPool.concat(['storm', 'rain', 'overcast']);
+
+      var newType = U.pick(seasonalPool);
       weather.type = newType;
       weather.wind = U.randFloat(-0.6, 0.6);
-      weather.temperature = 10 + U.rng() * 14;
+      weather.temperature = 8 + U.rng() * 16;
       switch (newType) {
         case 'clear': weather.intensity = 0; break;
         case 'cloudy': weather.intensity = 0.15; break;

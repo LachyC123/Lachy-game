@@ -60,11 +60,15 @@ Game.Combat = (function () {
     var player = Game.Player.getState();
     var range = Game.Player.getAttackRange();
     var arc = Game.Player.getAttackArc();
-    var damage = Game.Player.getAttackDamage();
+    var baseDamage = Game.Player.getAttackDamage();
+
+    // Heavy attacks are wider cleaves
+    var arcWidth = type === 'heavy' ? arc.width * 1.25 : arc.width;
 
     // Find NPCs in attack range and arc
     var nearby = Game.NPC.getNearPlayer(range + 10);
     var hit = false;
+    var hitCount = 0;
 
     for (var i = 0; i < nearby.length; i++) {
       var npc = nearby[i];
@@ -76,41 +80,50 @@ Game.Combat = (function () {
       // Check angle
       var angleToNpc = U.angle(player.x, player.y, npc.x, npc.y);
       var angleDiff = Math.abs(normalizeAngle(angleToNpc - arc.angle));
-      if (angleDiff > arc.width / 2) continue;
+      if (angleDiff > arcWidth / 2) continue;
 
-      // Hit this NPC
-      var actual = Game.NPC.takeDamage(npc, damage, true);
+      var damage = baseDamage;
+
+      // Edge of swing = glancing blow
+      if (angleDiff > arcWidth * 0.36) damage *= 0.8;
+
+      // Heavy cleave falloff across multiple targets
+      if (type === 'heavy' && hitCount > 0) damage *= Math.max(0.55, 1 - hitCount * 0.18);
+
+      // Critical chance scales with sword skill
+      var critChance = 0.08 + player.skills.sword * 0.002;
+      var crit = U.rng() < critChance;
+      if (crit) damage *= 1.6;
+
+      var actual = Game.NPC.takeDamage(npc, Math.round(damage), true);
       hit = true;
+      hitCount++;
 
       // Damage number
-      addDamageNumber(npc.x, npc.y - 20, actual);
+      addDamageNumber(npc.x, npc.y - 20, actual + (crit ? '!' : ''));
 
-      // Screen shake on hit (heavier for heavy attacks)
       if (Game.Renderer.triggerShake) {
-        Game.Renderer.triggerShake(type === 'heavy' ? 6 : 3);
+        Game.Renderer.triggerShake(type === 'heavy' ? 7 : 4);
       }
 
-      // Swing effect
       addEffect('slash', player.x, player.y, arc.angle, 0.2);
 
-      // Combat log
-      logCombat('You hit ' + npc.name.full + ' for ' + actual + ' damage.');
+      if (crit) logCombat('Critical hit on ' + npc.name.full + ' for ' + actual + '.');
+      else logCombat('You hit ' + npc.name.full + ' for ' + actual + ' damage.');
 
-      // Report crime
       if (npc.faction !== 'bandits') {
         Game.Law.reportCrime('assault', null, npc);
-        if (!npc.alive) {
-          Game.Law.reportCrime('murder', null, npc);
-        }
+        if (!npc.alive) Game.Law.reportCrime('murder', null, npc);
       }
 
-      // Skill gain
-      Game.Player.gainSkill('sword', type === 'heavy' ? 0.08 : 0.04);
+      Game.Player.gainSkill('sword', type === 'heavy' ? 0.1 : 0.05);
     }
 
     if (!hit) {
-      // Swing effect anyway
       addEffect('slash', player.x, player.y, arc.angle, 0.15);
+      logCombat('Your swing misses.');
+    } else if (hitCount > 1) {
+      logCombat('Cleave hit ' + hitCount + ' targets.');
     }
   }
 

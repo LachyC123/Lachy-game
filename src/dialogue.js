@@ -357,19 +357,45 @@ Game.Dialogue = (function () {
   }
 
   function respondWork() {
-    var jobs = [
-      { text: 'I need someone to deliver grain to Ashford. I will pay 15 gold.', reward: 15 },
-      { text: 'Could you chop wood? I will pay 8 gold for a bundle.', reward: 8 },
-      { text: 'Help me in the fields today. 10 gold for honest work.', reward: 10 }
-    ];
-    var job = U.pick(jobs);
-    dialogueText = job.text;
-    // Simplified: instant reward for now
-    Game.Player.getState().gold += job.reward;
-    currentNPC.playerRelation += 5;
-    Game.Player.gainSkill('speech', 0.02);
-    if (Game.advanceTime) Game.advanceTime(120); // 2 hours of work
-    dialogueText += ' [+' + job.reward + ' gold]';
+    var loc = currentNPC && currentNPC.currentLocation ? currentNPC.currentLocation : 'wilderness';
+    var jobs = Game.Economy && Game.Economy.getAvailableJobs ? Game.Economy.getAvailableJobs(loc) : [];
+
+    // Prefer jobs that match the NPC profession when possible
+    var preferredByJob = {
+      farmer: ['field_work', 'deliver_grain'],
+      blacksmith: ['forge_bellows', 'haul_stone'],
+      woodcutter: ['chop_wood'],
+      carpenter: ['chop_wood', 'barrel_repair'],
+      mason: ['haul_stone'],
+      fisherman: ['dock_fishing'],
+      baker: ['bakery_shift'],
+      tailor: ['tailor_errands'],
+      butcher: ['tannery_sort'],
+      cooper: ['barrel_repair'],
+      potter: ['clay_kiln'],
+      guard: ['guard_duty']
+    };
+
+    var pref = preferredByJob[currentNPC.job] || [];
+    var weighted = jobs.filter(function (j) { return pref.indexOf(j.id) >= 0; });
+    var picked = weighted.length > 0 ? U.pick(weighted) : (jobs.length > 0 ? U.pick(jobs) : null);
+
+    if (!picked) {
+      dialogueText = 'I have no paid work for you right now. Check again later.';
+      rebuildWithBack();
+      return;
+    }
+
+    var result = Game.Economy.doJob(picked.id);
+    if (!result) {
+      dialogueText = 'Something went wrong with the work ledger. Try again.';
+      rebuildWithBack();
+      return;
+    }
+
+    currentNPC.playerRelation += 4;
+    dialogueText = 'I can use help: ' + result.name + '. ' + (result.desc || '') + ' [+' + result.finalReward + ' gold]';
+    if (result.skill) dialogueText += ' [+' + result.skill + ' skill]';
     rebuildWithBack();
   }
 

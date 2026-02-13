@@ -8,13 +8,41 @@ Game.paused = false;
 Game.initialized = false;
 Game.TIME_SCALE = 2; // game minutes per real second
 
+Game.onNewDay = function () {
+  var p = Game.Player.getState();
+  var summary = 'Day ' + Game.day + ': a new dawn over the frontier.';
+
+  // Passive recovery for surviving the night
+  p.health = Math.min(p.maxHealth, p.health + 8);
+  p.stamina = Math.min(p.maxStamina, p.stamina + 15);
+  p.bleeding = Math.max(0, p.bleeding - 1.5);
+
+  // Economy and world news pulse
+  Game.Economy.updateFluctuation();
+  if (Game.Ambient && Game.Ambient.addNews) {
+    Game.Ambient.addNews((function(){
+      var news = [
+        'Merchants reset their ledgers at dawn.',
+        'Labor contracts were posted at first light.',
+        'Fresh caravans arrived with new goods.',
+        'A new day of work begins across the settlements.'
+      ];
+      return news[Math.floor(Math.random() * news.length)];
+    })());
+  }
+
+  if (Game.UI && Game.UI.showNotification) {
+    Game.UI.showNotification(summary + ' You feel somewhat rested.');
+  }
+};
+
 Game.advanceTime = function (minutes) {
   Game.time += minutes;
   while (Game.time >= 1440) { // 24 * 60
     Game.time -= 1440;
     Game.day++;
     Game.Player.getState().daysAlive++;
-    Game.Economy.updateFluctuation();
+    Game.onNewDay();
   }
 };
 
@@ -115,7 +143,7 @@ Game.Main = (function () {
       Game.time -= 1440;
       Game.day++;
       Game.Player.getState().daysAlive++;
-      Game.Economy.updateFluctuation();
+      Game.onNewDay();
     }
 
     // Update systems
