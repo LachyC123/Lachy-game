@@ -550,7 +550,7 @@ Game.NPC = (function () {
       }
     }
 
-    // Guards: check for crimes / suspicious behavior
+    // Guards: check for crimes / suspicious behavior / react to social class
     if (npc.job === 'guard' && distToPlayer < 180) {
       var pState = Game.Player.getState();
       if (pState.bounty > 0) {
@@ -562,6 +562,23 @@ Game.NPC = (function () {
       if (Game.World.isRestricted(Math.floor(px / TS), Math.floor(py / TS)) && Game.Player.getApparentClass() !== 'noble') {
         setBark(npc, 'You do not belong here. Move along.');
       }
+      // Salute/acknowledge nobles passing by
+      var nearbyNobility = spatialHash.query(npc.x, npc.y, 80);
+      for (var ni = 0; ni < nearbyNobility.length; ni++) {
+        var nn = nearbyNobility[ni];
+        if ((nn.job === 'noble' || nn.job === 'king') && nn.alive && npc.barkTimer <= 0 && U.rng() < 0.01) {
+          if (nn.x < npc.x) npc.facing = 'W'; else npc.facing = 'E';
+          setBark(npc, nn.job === 'king' ? 'Your Majesty.' : 'My lord.');
+          break;
+        }
+      }
+    }
+
+    // NPCs pause and look at player when greeting
+    if (npc.barkTimer > 2.5 && distToPlayer < 100) {
+      var lookAngle = U.angle(npc.x, npc.y, px, py);
+      npc.facing = U.dirFromAngle(lookAngle);
+      npc.wanderTimer = Math.max(npc.wanderTimer, 2);
     }
 
     // Follow schedule
@@ -584,10 +601,10 @@ Game.NPC = (function () {
             npc.wanderTimer -= dt;
             if (npc.hasTarget) moveToward(npc, npc.targetX, npc.targetY, dt, 0.5);
           }
-          // Work barks
-          if (npc.barkTimer <= 0 && U.rng() < 0.005) {
-            var barks = getWorkBarks(npc.job);
-            setBark(npc, U.pick(barks));
+          // Work barks (now context-aware)
+          if (npc.barkTimer <= 0 && U.rng() < 0.006) {
+            var ctxBark = Game.Ambient ? Game.Ambient.getContextBark(npc, 'work') : null;
+            setBark(npc, ctxBark || U.pick(getWorkBarks(npc.job)));
           }
         }
         break;
@@ -616,9 +633,10 @@ Game.NPC = (function () {
           socY = npc.home.y + U.randFloat(-64, 64);
         }
         moveToward(npc, socX, socY, dt, 0.6);
-        // Social barks
-        if (npc.barkTimer <= 0 && U.rng() < 0.003) {
-          setBark(npc, U.pick(getSocialBarks(npc)));
+        // Social barks (context-aware)
+        if (npc.barkTimer <= 0 && U.rng() < 0.004) {
+          var ctxBark = Game.Ambient ? Game.Ambient.getContextBark(npc, 'social') : null;
+          setBark(npc, ctxBark || U.pick(getSocialBarks(npc)));
         }
         break;
       case STATE.IDLE:
@@ -639,9 +657,10 @@ Game.NPC = (function () {
         break;
     }
 
-    // Ambient awareness barks
-    if (npc.barkTimer <= 0 && distToPlayer < 120 && U.rng() < 0.002) {
-      setBark(npc, U.pick(getAwarenessBarks(npc, hour)));
+    // Ambient awareness barks (now rich and contextual)
+    if (npc.barkTimer <= 0 && distToPlayer < 120 && U.rng() < 0.003) {
+      var ctxBark = Game.Ambient ? Game.Ambient.getContextBark(npc, 'playerNear') : null;
+      setBark(npc, ctxBark || U.pick(getAwarenessBarks(npc, hour)));
     }
   }
 

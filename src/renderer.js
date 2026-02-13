@@ -67,8 +67,22 @@ Game.Renderer = (function () {
         ctx.drawImage(chunkCanvas, Math.floor(cx * CS * TS - camera.x), Math.floor(cy * CS * TS - camera.y));
       }
 
-    // Entities sorted by Y
+    // Water shimmer overlay (per-frame animation on top of cached chunks)
+    renderWaterShimmer();
+
+    // Wildlife (ground layer - rendered among entities by Y)
     var entities = collectVisibleEntities();
+    // Mix in wildlife as pseudo-entities for Y-sorting
+    if (Game.Ambient) {
+      var wl = Game.Ambient.getWildlife();
+      for (var i = 0; i < wl.length; i++) {
+        var w = wl[i];
+        if (w.x > camera.x - 50 && w.x < camera.x + camera.w + 50 &&
+            w.y > camera.y - 50 && w.y < camera.y + camera.h + 50) {
+          entities.push({ x: w.x, y: w.y, isWildlife: true, data: w });
+        }
+      }
+    }
     entities.sort(function (a, b) { return a.y - b.y; });
 
     for (var i = 0; i < entities.length; i++) {
@@ -76,15 +90,22 @@ Game.Renderer = (function () {
       var sx = Math.floor(e.x - camera.x);
       var sy = Math.floor(e.y - camera.y);
       if (e.isPlayer) drawPlayer(ctx, sx, sy, e);
+      else if (e.isWildlife) drawWildlife(ctx, sx, sy, e.data);
       else drawNPC(ctx, sx, sy, e);
     }
 
-    // Particles (above entities)
+    // Particles
     renderParticles();
 
     // Combat effects
     renderCombatEffects();
     renderDamageNumbers();
+
+    // Clouds (between entities and day/night overlay)
+    renderClouds();
+
+    // Weather overlay (rain/storm)
+    renderWeather();
 
     // Day/night
     renderDayNight();
@@ -92,7 +113,7 @@ Game.Renderer = (function () {
     // Speech bubbles after overlay
     for (var i = 0; i < entities.length; i++) {
       var e = entities[i];
-      if (e.isPlayer || !e.alive) continue;
+      if (e.isPlayer || e.isWildlife || !e.alive) continue;
       renderSpeechBubble(ctx, Math.floor(e.x - camera.x), Math.floor(e.y - camera.y), e);
     }
   }
@@ -905,6 +926,257 @@ Game.Renderer = (function () {
     grad.addColorStop(1, 'rgba(200,100,30,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
+  }
+
+  // ======= WATER SHIMMER OVERLAY =======
+
+  function renderWaterShimmer() {
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    // Only draw shimmer on visible water tiles
+    var tStartX = Math.floor(camera.x / TS);
+    var tStartY = Math.floor(camera.y / TS);
+    var tEndX = Math.ceil((camera.x + camera.w) / TS);
+    var tEndY = Math.ceil((camera.y + camera.h) / TS);
+    for (var ty = tStartY; ty <= tEndY; ty++) {
+      for (var tx = tStartX; tx <= tEndX; tx++) {
+        var tile = W.tileAt(tx, ty);
+        if (tile !== W.T.WATER) continue;
+        var sx = tx * TS - camera.x;
+        var sy = ty * TS - camera.y;
+        // Animated ripple lines
+        var phase = animTime * 2 + tx * 0.7 + ty * 0.5;
+        ctx.fillStyle = 'rgba(160,210,240,0.6)';
+        var ry = (Math.sin(phase) * 6 + 12) | 0;
+        ctx.fillRect(sx + 4, sy + ry, 10, 1);
+        var ry2 = (Math.sin(phase + 2) * 5 + 20) | 0;
+        ctx.fillRect(sx + 14, sy + ry2, 8, 1);
+      }
+    }
+    ctx.restore();
+  }
+
+  // ======= WILDLIFE RENDERING =======
+
+  function drawWildlife(ctx, sx, sy, w) {
+    ctx.save();
+    var t = animTime + w.variant * 0.1;
+
+    switch (w.type) {
+      case 'bird':
+        // Small bird: body + wing flaps
+        ctx.fillStyle = '#5a4030';
+        ctx.fillRect(sx - 2, sy - 1, 5, 3);
+        // Wings
+        var wingUp = Math.sin(w.animPhase) * 3;
+        ctx.fillStyle = '#6a5040';
+        ctx.fillRect(sx - 4, sy - 2 - Math.abs(wingUp), 3, 2);
+        ctx.fillRect(sx + 2, sy - 2 - Math.abs(wingUp), 3, 2);
+        // Beak
+        ctx.fillStyle = '#c89030';
+        ctx.fillRect(sx + 3, sy - 1, 2, 1);
+        // Eye
+        ctx.fillStyle = '#111';
+        ctx.fillRect(sx + 1, sy - 1, 1, 1);
+        break;
+
+      case 'crow':
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(sx - 3, sy - 1, 6, 3);
+        var cw = Math.sin(w.animPhase) * 3;
+        ctx.fillRect(sx - 5, sy - 2 - Math.abs(cw), 3, 2);
+        ctx.fillRect(sx + 3, sy - 2 - Math.abs(cw), 3, 2);
+        ctx.fillStyle = '#333';
+        ctx.fillRect(sx + 3, sy - 1, 2, 1);
+        break;
+
+      case 'butterfly':
+        var bColor = ['#e06080','#60a0e0','#e0c040','#a060d0'][(w.variant >> 2) % 4];
+        ctx.fillStyle = bColor;
+        var bw = Math.sin(w.animPhase) * 2.5;
+        ctx.globalAlpha = 0.8;
+        // Wings
+        ctx.beginPath();
+        ctx.ellipse(sx - 2, sy + bw * 0.5, 3, 2 + Math.abs(bw), 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(sx + 2, sy - bw * 0.5, 3, 2 + Math.abs(bw), 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Body
+        ctx.fillStyle = '#222';
+        ctx.fillRect(sx - 0.5, sy - 2, 1, 4);
+        break;
+
+      case 'dragonfly':
+        ctx.fillStyle = '#306090';
+        ctx.fillRect(sx - 4, sy, 8, 2);
+        // Wings
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = '#a0d0f0';
+        var dw = Math.sin(w.animPhase * 2) * 2;
+        ctx.fillRect(sx - 5, sy - 2 - Math.abs(dw), 4, 2);
+        ctx.fillRect(sx + 2, sy - 2 - Math.abs(dw), 4, 2);
+        break;
+
+      case 'rabbit':
+        ctx.fillStyle = '#b0a080';
+        // Body
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, 4, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Head
+        ctx.beginPath();
+        ctx.arc(sx + 3, sy - 2, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        // Ears
+        ctx.fillRect(sx + 2, sy - 6, 1.5, 4);
+        ctx.fillRect(sx + 4, sy - 5, 1.5, 3);
+        // Eye
+        ctx.fillStyle = '#111';
+        ctx.fillRect(sx + 4, sy - 2, 1, 1);
+        // Hopping animation
+        if (w.state === 'move' || w.state === 'flee') {
+          ctx.fillStyle = '#b0a080';
+          var hop = Math.abs(Math.sin(t * 12)) * 2;
+          ctx.translate(0, -hop);
+        }
+        break;
+
+      case 'deer':
+        ctx.fillStyle = '#8a6a40';
+        // Body
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, 7, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Legs
+        ctx.fillStyle = '#7a5a30';
+        var legAnim = w.state === 'flee' ? Math.sin(t * 8) * 3 : 0;
+        ctx.fillRect(sx - 4 + legAnim, sy + 2, 2, 6);
+        ctx.fillRect(sx - 1 - legAnim, sy + 2, 2, 6);
+        ctx.fillRect(sx + 2 + legAnim, sy + 2, 2, 6);
+        ctx.fillRect(sx + 5 - legAnim, sy + 2, 2, 6);
+        // Head + neck
+        ctx.fillStyle = '#8a6a40';
+        ctx.fillRect(sx + 5, sy - 6, 3, 6);
+        ctx.beginPath();
+        ctx.arc(sx + 7, sy - 7, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Eye
+        ctx.fillStyle = '#111';
+        ctx.fillRect(sx + 8, sy - 8, 1, 1);
+        // Antlers (small)
+        ctx.strokeStyle = '#5a4020';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sx + 6, sy - 10); ctx.lineTo(sx + 4, sy - 14);
+        ctx.moveTo(sx + 8, sy - 10); ctx.lineTo(sx + 10, sy - 13);
+        ctx.stroke();
+        break;
+
+      case 'rat':
+        ctx.fillStyle = '#6a5a4a';
+        ctx.beginPath();
+        ctx.ellipse(sx, sy, 3, 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Tail
+        ctx.strokeStyle = '#8a7a6a';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(sx - 3, sy);
+        ctx.quadraticCurveTo(sx - 6, sy - 2, sx - 8, sy + 1);
+        ctx.stroke();
+        // Ears
+        ctx.fillStyle = '#8a7060';
+        ctx.fillRect(sx + 1, sy - 2, 2, 2);
+        // Eye
+        ctx.fillStyle = '#111';
+        ctx.fillRect(sx + 2, sy - 1, 1, 1);
+        break;
+
+      case 'fish':
+        ctx.fillStyle = 'rgba(80,120,160,0.5)';
+        var fx = Math.sin(w.animPhase) * 2;
+        ctx.beginPath();
+        ctx.ellipse(sx + fx, sy, 4, 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Tail
+        ctx.beginPath();
+        ctx.moveTo(sx - 4 + fx, sy);
+        ctx.lineTo(sx - 7 + fx, sy - 2);
+        ctx.lineTo(sx - 7 + fx, sy + 2);
+        ctx.fill();
+        break;
+    }
+    ctx.restore();
+  }
+
+  // ======= CLOUDS =======
+
+  function renderClouds() {
+    if (!Game.Ambient) return;
+    var clouds = Game.Ambient.getClouds();
+    ctx.save();
+    for (var i = 0; i < clouds.length; i++) {
+      var c = clouds[i];
+      ctx.globalAlpha = c.opacity;
+      ctx.fillStyle = '#e8e4e0';
+      // Multiple overlapping ellipses for organic cloud shape
+      var blobSpacing = c.w / c.blobs;
+      for (var b = 0; b < c.blobs; b++) {
+        var bx = c.x + b * blobSpacing;
+        var by = c.y + Math.sin(b * 1.5) * c.h * 0.3;
+        var bw = blobSpacing * 0.8 + Math.sin(b * 2.3) * 10;
+        var bh = c.h * (0.6 + Math.sin(b * 1.7) * 0.3);
+        ctx.beginPath();
+        ctx.ellipse(bx, by, bw, bh, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ======= WEATHER RENDERING (rain, storm) =======
+
+  function renderWeather() {
+    if (!Game.Ambient) return;
+    var w = Game.Ambient.getWeather();
+    if (w.type !== 'rain' && w.type !== 'storm') return;
+
+    ctx.save();
+    var intensity = w.intensity;
+    var wind = w.wind;
+
+    // Rain drops
+    ctx.strokeStyle = 'rgba(160,180,200,' + (intensity * 0.4) + ')';
+    ctx.lineWidth = 1;
+    var dropCount = Math.floor(intensity * 120);
+    ctx.beginPath();
+    for (var i = 0; i < dropCount; i++) {
+      // Pseudo-random but consistent rain pattern
+      var rx = ((animTime * 50 + i * 137.5) % (screenW + 100)) - 50;
+      var ry = ((animTime * 250 + i * 89.3) % (screenH + 80)) - 40;
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx + wind * 8, ry + 12);
+    }
+    ctx.stroke();
+
+    // Storm: darken + occasional flash
+    if (w.type === 'storm') {
+      ctx.fillStyle = 'rgba(0,0,10,' + (intensity * 0.15) + ')';
+      ctx.fillRect(0, 0, screenW, screenH);
+      // Lightning flash (rare)
+      if (Math.random() < 0.002) {
+        ctx.fillStyle = 'rgba(220,220,240,0.15)';
+        ctx.fillRect(0, 0, screenW, screenH);
+      }
+    }
+
+    // Overcast dim
+    if (w.type === 'rain') {
+      ctx.fillStyle = 'rgba(20,20,30,' + (intensity * 0.08) + ')';
+      ctx.fillRect(0, 0, screenW, screenH);
+    }
+    ctx.restore();
   }
 
   // ======= HELPERS =======

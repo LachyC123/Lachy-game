@@ -261,6 +261,15 @@ Game.World = (function () {
     placeBuilding(122, 120, 4, 3, T.WALL_WOOD, T.WOOD_FLOOR, 'shop');
     placeBuilding(130, 120, 4, 3, T.WALL_WOOD, T.WOOD_FLOOR, 'shop');
 
+    // Training yard (open area near barracks)
+    for (var y = 142; y <= 146; y++)
+      for (var x = 120; x <= 126; x++) setTile(x, y, T.DIRT);
+    locations.trainingYard = { x: 123, y: 144, name: 'Training Yard' };
+
+    // Small garden in noble district
+    for (var y = 112; y <= 114; y++)
+      for (var x = 142; x <= 146; x++) setTile(x, y, T.GRASS);
+
     locations.market = { x: 128, y: 128, name: 'Market Square' };
     locations.townGateSouth = { x: 128, y: 149, name: 'Town South Gate' };
     locations.townGateWest = { x: 109, y: 128, name: 'Town West Gate' };
@@ -412,6 +421,54 @@ Game.World = (function () {
     // Road signs
     setDeco(90, 152, D.SIGN_POST); // fork toward town
     setDeco(76, 66, D.SIGN_POST);  // fork near thornfield
+
+    // === GRAVEYARD (just outside town, NW corner) ===
+    for (var y = 104; y <= 107; y++)
+      for (var x = 100; x <= 106; x++) setTile(x, y, T.GRASS);
+    for (var x = 100; x <= 106; x++) setDeco(x, 103, D.FENCE_H);
+    for (var y = 103; y <= 107; y++) { setDeco(99, y, D.FENCE_V); setDeco(107, y, D.FENCE_V); }
+    setDeco(101, 105, D.GRAVESTONE); setDeco(103, 105, D.GRAVESTONE);
+    setDeco(105, 105, D.GRAVESTONE); setDeco(102, 107, D.GRAVESTONE);
+    setDeco(104, 107, D.GRAVESTONE);
+
+    // === TRAINING YARD decorations ===
+    setDeco(121, 143, D.BARREL); // archery target stand-in
+    setDeco(125, 143, D.BARREL);
+    setDeco(123, 145, D.SIGN_POST);
+
+    // === NOBLE GARDEN ===
+    setDeco(143, 112, D.PLANTER); setDeco(145, 112, D.PLANTER);
+    setDeco(143, 114, D.FLOWERS); setDeco(144, 114, D.FLOWERS); setDeco(145, 114, D.FLOWERS);
+    setDeco(142, 113, D.BENCH);
+
+    // === DOCK / PIER on river (near Millhaven, south of bridge) ===
+    for (var dy = 0; dy < 5; dy++) {
+      setTile(37, 135 + dy, T.BRIDGE);
+      setTile(38, 135 + dy, T.BRIDGE);
+    }
+    setDeco(37, 135, D.BARREL);
+    setDeco(38, 139, D.CRATE);
+
+    // === More scatter through the world ===
+    // Roadside details: carts, water buckets
+    setDeco(95, 155, D.CART); setDeco(80, 100, D.CART);
+    setDeco(100, 160, D.WATER_BUCKET); setDeco(60, 68, D.WATER_BUCKET);
+
+    // Benches on village outskirts
+    setDeco(60, 185, D.BENCH); setDeco(72, 60, D.BENCH);
+
+    // Barrels near tavern entrance
+    setDeco(116, 130, D.BARREL); setDeco(117, 130, D.BARREL);
+
+    // Extra hay bales near town farms
+    setDeco(120, 158, D.HAY_BALE); setDeco(135, 160, D.HAY_BALE);
+
+    // Extra torches at village centers
+    setDeco(64, 190, D.TORCH); setDeco(68, 190, D.TORCH);
+    setDeco(64, 64, D.TORCH); setDeco(68, 64, D.TORCH);
+
+    // Log pile at woodcutter area expanded
+    setDeco(56, 59, D.LOG_PILE); setDeco(62, 58, D.LOG_PILE); setDeco(57, 56, D.LOG_PILE);
   }
 
   function placeBuilding(bx, by, w, h, wallType, floorType, bType) {
