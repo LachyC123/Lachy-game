@@ -67,7 +67,7 @@ Game.Player = (function () {
     player.stamina = player.maxStamina;
     player.alive = true;
     player.inventory = [
-      { id: 'bread', name: 'Bread', type: 'food', value: 2, qty: 3 },
+      { id: 'bread', name: 'Bread', type: 'food', value: 2, qty: 3, healAmount: 8 },
       { id: 'knife', name: 'Hunting Knife', type: 'weapon', damage: 8, speed: 1.2, value: 10, qty: 1 }
     ];
     player.equipped.weapon = player.inventory[1];

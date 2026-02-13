@@ -198,15 +198,14 @@ Game.Input = (function () {
   function consumeAction(name) {
     buttons[name] = false;
     buttonTimers[name] = 0;
-    keys['KeyJ'] = false;
-    keys['KeyK'] = false;
-    keys['KeyL'] = false;
-    keys['Space'] = false;
-    keys['KeyE'] = false;
-    keys['KeyI'] = false;
-    keys['F5'] = false;
-    keys['F9'] = false;
-    keys['F3'] = false;
+    // Only clear the specific key mapping for this action
+    var keyMap = {
+      attack: 'KeyJ', heavyAttack: 'KeyK', block: 'KeyL',
+      dodge: 'Space', interact: 'KeyE', inventory: 'KeyI',
+      save: 'F5', load: 'F9', debug: 'F3'
+    };
+    if (keyMap[name]) keys[keyMap[name]] = false;
+    if (name === 'dodge') keys['ShiftLeft'] = false;
   }
 
   function update() {
@@ -232,6 +231,7 @@ Game.Input = (function () {
   }
 
   function isKeyDown(code) { return !!keys[code]; }
+  function clearKey(code) { keys[code] = false; }
   function getTap() { return tapped ? { x: tapPos.x, y: tapPos.y } : null; }
 
   return {
@@ -239,6 +239,6 @@ Game.Input = (function () {
     getMovement: getMovement, isAction: isAction, consumeAction: consumeAction,
     getJoystickState: getJoystickState,
     registerButton: registerButton, clearButtons: clearButtons,
-    isKeyDown: isKeyDown, getTap: getTap
+    isKeyDown: isKeyDown, clearKey: clearKey, getTap: getTap
   };
 })();

@@ -1,5 +1,17 @@
 var Game = Game || {};
 
+// Ellipse polyfill for older browsers
+if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.ellipse) {
+  CanvasRenderingContext2D.prototype.ellipse = function (x, y, rx, ry, rot, sa, ea, ccw) {
+    this.save();
+    this.translate(x, y);
+    this.rotate(rot);
+    this.scale(rx, ry);
+    this.arc(0, 0, 1, sa, ea, ccw);
+    this.restore();
+  };
+}
+
 Game.Utils = (function () {
   // Seeded PRNG (xorshift128)
   function PRNG(seed) {

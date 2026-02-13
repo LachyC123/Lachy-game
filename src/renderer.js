@@ -92,7 +92,7 @@ Game.Renderer = (function () {
     // Speech bubbles (rendered after overlay so they're visible)
     for (var i = 0; i < entities.length; i++) {
       var e = entities[i];
-      if (e.isPlayer) continue;
+      if (e.isPlayer || !e.alive) continue;
       var sx = Math.floor(e.x - camera.x);
       var sy = Math.floor(e.y - camera.y);
       renderSpeechBubble(ctx, sx, sy, e);

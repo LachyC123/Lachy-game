@@ -393,7 +393,9 @@ Game.UI = (function () {
 
     // Keyboard selection (1-9)
     for (var i = 0; i < options.length && i < 9; i++) {
-      if (Game.Input.isKeyDown('Digit' + (i + 1))) {
+      var digitKey = 'Digit' + (i + 1);
+      if (Game.Input.isKeyDown(digitKey)) {
+        Game.Input.clearKey(digitKey);
         Game.Dialogue.selectOption(i);
         break;
       }
@@ -461,18 +463,57 @@ Game.UI = (function () {
       var item = p.inventory[i];
       var txt = item.name;
       if (item.qty > 1) txt += ' x' + item.qty;
-      if (p.equipped.weapon === item) txt += ' [Equipped]';
-      if (p.equipped.armor === item) txt += ' [Worn]';
+      var action = '';
+      if (p.equipped.weapon === item) { txt += ' [Equipped]'; }
+      else if (p.equipped.armor === item) { txt += ' [Worn]'; }
+      else if (item.type === 'weapon') { action = '[Equip]'; }
+      else if (item.type === 'armor') { action = '[Wear]'; }
+      else if (item.healAmount) { action = '[Use]'; }
+
       ctx.fillText(txt, iX + 20, sy);
-      sy += 16;
-      if (sy > iY + iH - 20) break;
+
+      // Action button for item
+      if (action) {
+        ctx.fillStyle = 'rgba(100,90,60,0.6)';
+        var abx = iX + iW - 60, aby = sy - 12;
+        ctx.fillRect(abx, aby, 50, 16);
+        ctx.fillStyle = '#d4a030';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(action, abx + 4, sy);
+        Game.Input.registerButton('invItem' + i, abx, aby, 50, 16);
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#e8dcc8';
+      }
+
+      sy += 18;
+      if (sy > iY + iH - 30) break;
+    }
+
+    // Handle inventory item actions
+    for (var i = 0; i < p.inventory.length; i++) {
+      if (Game.Input.isAction('invItem' + i)) {
+        Game.Input.consumeAction('invItem' + i);
+        var item = p.inventory[i];
+        if (item.healAmount && item.type === 'food' || item.type === 'healing') {
+          Game.Player.heal(item.healAmount);
+          Game.Player.removeItem(item.id, 1);
+          showNotification('Used ' + item.name + '. +' + item.healAmount + ' health.');
+        } else if (item.type === 'weapon') {
+          p.equipped.weapon = item;
+          showNotification('Equipped ' + item.name + '.');
+        } else if (item.type === 'armor') {
+          p.equipped.armor = item;
+          showNotification('Wearing ' + item.name + '.');
+        }
+        break;
+      }
     }
 
     // Close hint
     ctx.font = '10px sans-serif';
     ctx.fillStyle = 'rgba(200,180,140,0.5)';
     ctx.textAlign = 'center';
-    ctx.fillText('Press I to close', iX + iW / 2, iY + iH - 10);
+    ctx.fillText('Press I to close | Tap items to use', iX + iW / 2, iY + iH - 10);
 
     ctx.restore();
   }
