@@ -172,7 +172,15 @@ Game.NPC = (function () {
       // Merchant data
       inventory: opts.inventory || [],
       // state
-      currentLocation: opts.location || 'wilderness'
+      currentLocation: opts.location || 'wilderness',
+      // Activity & immersion
+      activityAnim: 0,       // phase counter for tool use animation
+      alertIcon: '',         // '!' or '?' shown above head
+      alertIconTimer: 0,
+      greetedPlayer: false,  // has greeted player this encounter
+      greetCooldown: 0,      // cooldown before greeting again
+      timesMetPlayer: 0,     // how many times player approached
+      lastPlayerDist: 999    // track approach/leave
     };
     npcs.push(npc);
     return npc;
@@ -447,6 +455,38 @@ Game.NPC = (function () {
         location: 'banditCamp'
       });
     }
+
+    // === WANDERING TRADERS (travel between settlements) ===
+    createNPC({
+      name: { first: 'Ingram', last: 'Brennan', full: 'Ingram Brennan' },
+      job: 'merchant', gender: 'male', age: 42,
+      x: 90 * TS, y: 160 * TS,
+      home: { x: 66 * TS, y: 190 * TS },   // Millhaven
+      work: { x: 128 * TS, y: 128 * TS },   // Ashford market
+      faction: 'civilian', personality: 'friendly',
+      speed: 55, playerRelation: 0, location: 'wilderness',
+      inventory: [
+        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 },
+        { id: 'wine', name: 'Wine', type: 'food', value: 8, healAmount: 15 },
+        { id: 'cloth', name: 'Fine Cloth', type: 'trade', value: 18 },
+        { id: 'spice', name: 'Spices', type: 'trade', value: 25 }
+      ]
+    });
+    createNPC({
+      name: { first: 'Petra', last: 'Lang', full: 'Petra Lang' },
+      job: 'merchant', gender: 'female', age: 35,
+      x: 80 * TS, y: 90 * TS,
+      home: { x: 66 * TS, y: 64 * TS },    // Thornfield
+      work: { x: 128 * TS, y: 128 * TS },   // Ashford market
+      faction: 'civilian', personality: 'honest',
+      speed: 50, playerRelation: 0, location: 'wilderness',
+      inventory: [
+        { id: 'wood', name: 'Bundle of Wood', type: 'trade', value: 5 },
+        { id: 'herbs', name: 'Healing Herbs', type: 'healing', value: 8, healAmount: 25 },
+        { id: 'pelts', name: 'Animal Pelts', type: 'trade', value: 15 },
+        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 }
+      ]
+    });
   }
 
   function update(dt) {
@@ -657,8 +697,60 @@ Game.NPC = (function () {
         break;
     }
 
-    // Ambient awareness barks (now rich and contextual)
-    if (npc.barkTimer <= 0 && distToPlayer < 120 && U.rng() < 0.003) {
+    // === GREETING MEMORY & ALERT SYSTEM ===
+    if (npc.greetCooldown > 0) npc.greetCooldown -= dt;
+    if (npc.alertIconTimer > 0) npc.alertIconTimer -= dt;
+    else npc.alertIcon = '';
+
+    // Track player approach/leave
+    var wasClose = npc.lastPlayerDist < 100;
+    var isClose = distToPlayer < 100;
+    npc.lastPlayerDist = distToPlayer;
+
+    // Player just entered NPC awareness range
+    if (isClose && !wasClose && npc.barkTimer <= 0 && npc.greetCooldown <= 0) {
+      npc.timesMetPlayer++;
+      npc.greetedPlayer = true;
+      npc.greetCooldown = 30; // don't greet again for 30s
+
+      var greeting;
+      if (npc.timesMetPlayer === 1) {
+        // First meeting ever
+        greeting = U.pick(['Hm? I have not seen you before.', 'A new face around here.', 'Who might you be?']);
+        npc.alertIcon = '?';
+        npc.alertIconTimer = 2;
+      } else if (npc.timesMetPlayer < 4) {
+        greeting = U.pick(['You again.', 'Back so soon?', 'I remember you.']);
+      } else if (npc.playerRelation > 15) {
+        greeting = U.pick(['Ah, my friend!', 'Welcome back!', 'Good to see you, ' + (Game.Player.getState().socialClass === 'peasant' ? 'friend' : 'sir') + '.']);
+      } else if (npc.playerRelation < -15) {
+        greeting = U.pick(['Not you again.', 'What do you want?', 'Keep walking.']);
+        npc.alertIcon = '!';
+        npc.alertIconTimer = 1.5;
+      } else {
+        greeting = U.pick(['Greetings.', 'Hello.', 'Day to you.']);
+      }
+
+      // Job-specific first greeting
+      if (npc.timesMetPlayer === 1) {
+        if (npc.job === 'guard') greeting = 'Halt. State your business here.';
+        else if (npc.job === 'merchant') greeting = 'A customer? Come, have a look!';
+        else if (npc.job === 'tavernKeeper') greeting = 'Welcome, traveler. Hungry?';
+      }
+
+      setBark(npc, greeting);
+
+      // Face the player
+      var lookAng = U.angle(npc.x, npc.y, px, py);
+      npc.facing = U.dirFromAngle(lookAng);
+      npc.wanderTimer = Math.max(npc.wanderTimer, 3);
+    }
+
+    // Activity animation counter (used by renderer for tool-use)
+    if (npc.state === STATE.WORK) npc.activityAnim += dt * 3;
+
+    // Ambient awareness barks (now rich and contextual) - less frequent since greetings handle proximity
+    if (npc.barkTimer <= 0 && distToPlayer < 120 && !isClose && U.rng() < 0.002) {
       var ctxBark = Game.Ambient ? Game.Ambient.getContextBark(npc, 'playerNear') : null;
       setBark(npc, ctxBark || U.pick(getAwarenessBarks(npc, hour)));
     }
@@ -669,53 +761,207 @@ Game.NPC = (function () {
     if (!pState.alive) {
       npc.state = STATE.IDLE;
       npc.combatTarget = null;
+      setBark(npc, U.pick(['That is done.', 'It is over.', 'Stay down.']));
       return;
     }
 
     var dist = U.dist(npc.x, npc.y, px, py);
 
-    // If too far, give up
+    // Give up if too far
     if (dist > 500) {
       npc.state = STATE.IDLE;
       npc.combatTarget = null;
+      setBark(npc, 'Coward ran off.');
       return;
     }
 
-    // Move toward player
-    if (dist > 36) {
-      moveToward(npc, px, py, dt, 1.2);
+    // Initialize combat sub-state if needed
+    if (!npc._combatPhase) npc._combatPhase = 'approach';
+    if (!npc._circleDir) npc._circleDir = U.rng() < 0.5 ? 1 : -1;
+    if (!npc._phaseTimer) npc._phaseTimer = 0;
+    npc._phaseTimer -= dt;
+
+    var angleToPlayer = U.angle(npc.x, npc.y, px, py);
+    var aggro = npc.aggression || 0.5;
+    var hpRatio = npc.health / npc.maxHealth;
+    var isPlayerAttacking = pState.attackTimer > 0;
+    var isPlayerBlocking = pState.blocking;
+    var allies = spatialHash.query(npc.x, npc.y, 150);
+    var allyCount = 0;
+    for (var ai = 0; ai < allies.length; ai++) {
+      if (allies[ai].id !== npc.id && allies[ai].alive && allies[ai].state === STATE.FIGHT) allyCount++;
     }
 
-    // Attack when in range
-    if (dist < 40 && npc.attackTimer <= 0) {
-      // NPC attacks player
-      var damage = npc.damage;
-      var skillMod = 0.8 + U.rng() * 0.4;
-      damage = Math.round(damage * skillMod);
-      var actual = Game.Player.takeDamage(damage, npc);
-      npc.attackTimer = 0.8 + U.rng() * 0.4;
+    // === TACTICAL PHASE MACHINE ===
 
-      // Bleeding chance
-      if (actual > 10 && U.rng() < 0.2) {
-        pState.bleeding += 1.5;
+    // Flee if low HP (cowards flee earlier, brave fight to the end)
+    var fleeThreshold = npc.personality === 'cowardly' ? 0.4 : npc.personality === 'brave' ? 0.1 : 0.2;
+    if (hpRatio < fleeThreshold && allyCount === 0) {
+      npc.state = STATE.FLEE;
+      npc.combatTarget = null;
+      npc._combatPhase = null;
+      setBark(npc, U.pick(['I yield!', 'Mercy!', 'I surrender!', 'Enough! I give up!']));
+      return;
+    }
+
+    // Retreat to heal if hurt but not critical
+    if (hpRatio < 0.5 && npc._combatPhase !== 'retreat' && U.rng() < 0.01) {
+      npc._combatPhase = 'retreat';
+      npc._phaseTimer = 1.5 + U.rng();
+      setBark(npc, U.pick(['Back off!', 'Need room...', 'Tch...']));
+    }
+
+    switch (npc._combatPhase) {
+      case 'approach':
+        // Close distance
+        if (dist > 45) {
+          moveToward(npc, px, py, dt, 1.2 + aggro * 0.3);
+        } else {
+          // In range — decide next action
+          npc._combatPhase = (U.rng() < 0.4 + aggro * 0.3) ? 'attack' : 'circle';
+          npc._phaseTimer = 0.3 + U.rng() * 0.5;
+        }
+        npc.blocking = false;
+        break;
+
+      case 'circle':
+        // Strafe around player to find an opening
+        var circleAngle = angleToPlayer + Math.PI / 2 * npc._circleDir;
+        var cx = px + Math.cos(circleAngle) * 50;
+        var cy = py + Math.sin(circleAngle) * 50;
+        moveToward(npc, cx, cy, dt, 0.8);
+        npc.blocking = U.rng() < 0.5; // guard while circling
+
+        if (npc._phaseTimer <= 0) {
+          // After circling, attack or keep circling
+          if (U.rng() < 0.6 + aggro * 0.2) {
+            npc._combatPhase = 'attack';
+            npc._phaseTimer = 0.1;
+          } else {
+            npc._circleDir *= -1; // switch direction
+            npc._phaseTimer = 1 + U.rng() * 1.5;
+          }
+        }
+        // Dodge if player is attacking us
+        if (isPlayerAttacking && dist < 50 && U.rng() < aggro * 0.4) {
+          npc._combatPhase = 'dodge';
+          npc._phaseTimer = 0.3;
+        }
+        break;
+
+      case 'attack':
+        // Rush in and strike
+        if (dist > 38) {
+          moveToward(npc, px, py, dt, 1.6);
+          npc.blocking = false;
+        }
+        if (dist < 42 && npc.attackTimer <= 0) {
+          // Don't attack into a block — feint sometimes
+          if (isPlayerBlocking && U.rng() < 0.35) {
+            npc._combatPhase = 'feint';
+            npc._phaseTimer = 0.6;
+            break;
+          }
+          var damage = npc.damage;
+          var skillMod = 0.8 + U.rng() * 0.4;
+          damage = Math.round(damage * skillMod);
+          var actual = Game.Player.takeDamage(damage, npc);
+          npc.attackTimer = 0.6 + U.rng() * 0.5;
+
+          if (actual > 10 && U.rng() < 0.2) pState.bleeding += 1.5;
+          if (npc.job !== 'guard' && npc.faction !== 'bandits') {
+            Game.Law.reportCrime('assault', npc, npc);
+          }
+
+          // After attacking, back off or press advantage
+          if (U.rng() < 0.4) {
+            npc._combatPhase = 'retreat';
+            npc._phaseTimer = 0.5 + U.rng() * 0.5;
+          } else {
+            npc._combatPhase = 'circle';
+            npc._phaseTimer = 0.8 + U.rng();
+          }
+        }
+        if (npc._phaseTimer <= 0) {
+          npc._combatPhase = 'circle';
+          npc._phaseTimer = 1;
+        }
+        break;
+
+      case 'feint':
+        // Fake approach then pull back, wait for player to drop guard
+        if (npc._phaseTimer > 0.3) {
+          moveToward(npc, px, py, dt, 1.4);
+        } else {
+          // Pull back
+          var retreatAngle = angleToPlayer + Math.PI;
+          moveToward(npc, npc.x + Math.cos(retreatAngle) * 30, npc.y + Math.sin(retreatAngle) * 30, dt, 1.0);
+        }
+        npc.blocking = false;
+        if (npc._phaseTimer <= 0) {
+          npc._combatPhase = 'attack'; // now actually strike
+          npc._phaseTimer = 0.3;
+        }
+        break;
+
+      case 'dodge':
+        // Quick sidestep
+        var dodgeAngle = angleToPlayer + (Math.PI / 2) * npc._circleDir;
+        moveToward(npc, npc.x + Math.cos(dodgeAngle) * 60, npc.y + Math.sin(dodgeAngle) * 60, dt, 2.0);
+        npc.blocking = false;
+        if (npc._phaseTimer <= 0) {
+          npc._combatPhase = 'attack';
+          npc._phaseTimer = 0.2;
+        }
+        break;
+
+      case 'retreat':
+        // Back away while blocking
+        var retAngle = angleToPlayer + Math.PI;
+        moveToward(npc, npc.x + Math.cos(retAngle) * 80, npc.y + Math.sin(retAngle) * 80, dt, 0.9);
+        npc.blocking = true;
+        if (npc._phaseTimer <= 0) {
+          npc._combatPhase = dist > 80 ? 'approach' : 'circle';
+          npc._phaseTimer = 1 + U.rng();
+        }
+        break;
+
+      default:
+        npc._combatPhase = 'approach';
+        npc._phaseTimer = 0;
+    }
+
+    // Group flanking: if allies present, try to position on opposite side
+    if (allyCount > 0 && npc._combatPhase !== 'dodge' && npc._combatPhase !== 'retreat') {
+      var avgAllyAngle = 0;
+      var counted = 0;
+      for (var ai = 0; ai < allies.length; ai++) {
+        var al = allies[ai];
+        if (al.id !== npc.id && al.alive && al.state === STATE.FIGHT) {
+          avgAllyAngle += U.angle(px, py, al.x, al.y);
+          counted++;
+        }
       }
-
-      // Report crime if guard
-      if (npc.job !== 'guard' && npc.faction !== 'bandits') {
-        Game.Law.reportCrime('assault', npc, npc);
+      if (counted > 0) {
+        avgAllyAngle /= counted;
+        // Position on opposite side from allies
+        var flankAngle = avgAllyAngle + Math.PI;
+        var idealX = px + Math.cos(flankAngle) * 45;
+        var idealY = py + Math.sin(flankAngle) * 45;
+        // Blend toward flanking position
+        npc.x += (idealX - npc.x) * dt * 0.8;
+        npc.y += (idealY - npc.y) * dt * 0.8;
       }
     }
 
-    // Block sometimes
-    npc.blocking = U.rng() < 0.3;
-
-    // Flee if low health
-    if (npc.health < npc.maxHealth * 0.2) {
-      if (npc.personality === 'cowardly' || U.rng() < 0.3) {
-        npc.state = STATE.FLEE;
-        npc.combatTarget = null;
-        setBark(npc, 'I yield! Have mercy!');
-      }
+    // Combat barks
+    if (npc.barkTimer <= 0 && U.rng() < 0.003) {
+      var cBarks = npc.faction === 'bandits' ?
+        ['Your gold is mine!', 'Stand still!', 'You picked the wrong fight!', 'Ha!'] :
+        npc.job === 'guard' ?
+        ['Halt, criminal!', 'You will not escape!', 'In the name of the King!', 'Surrender!'] :
+        ['Leave me alone!', 'Help!', 'Stay back!', 'Why are you doing this?'];
+      setBark(npc, U.pick(cBarks));
     }
   }
 
