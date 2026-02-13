@@ -201,13 +201,6 @@ Game.NPC = (function () {
     }
   }
 
-
-  function getJobLabel(job) {
-    if (job === 'tavernKeeper') return 'Tavern Keeper';
-    if (JOBS[job] && JOBS[job].label) return JOBS[job].label;
-    return job ? job.charAt(0).toUpperCase() + job.slice(1) : 'Commoner';
-  }
-
   function init() {
     W = Game.World;
     TS = W.TILE_SIZE;
@@ -1203,7 +1196,6 @@ Game.NPC = (function () {
     getNearest: getNearest, takeDamage: takeDamage,
     addMemory: addMemory, getByFaction: getByFaction,
     setBark: setBark, setSpeech: setSpeech,
-    getJobLabel: getJobLabel,
     getSerializable: getSerializable, loadState: loadState
   };
 })();
