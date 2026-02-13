@@ -277,37 +277,57 @@ Game.World = (function () {
 
   function generateVillage(settlement) {
     var cx = settlement.x, cy = settlement.y;
-    for (var y = cy - 8; y <= cy + 8; y++)
-      for (var x = cx - 10; x <= cx + 10; x++) {
+    for (var y = cy - 12; y <= cy + 12; y++)
+      for (var x = cx - 14; x <= cx + 14; x++) {
         var cur = tileAt(x, y);
         if (cur !== T.FOREST_FLOOR && cur !== T.WATER) setTile(x, y, T.GRASS);
       }
-    setTile(cx, cy, T.MARKET_STONE); setTile(cx + 1, cy, T.MARKET_STONE);
-    setTile(cx, cy + 1, T.MARKET_STONE); setTile(cx + 1, cy + 1, T.MARKET_STONE);
 
-    placeBuilding(cx - 7, cy - 5, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
-    placeBuilding(cx + 3, cy - 5, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
-    placeBuilding(cx - 7, cy + 3, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
-    placeBuilding(cx + 3, cy + 3, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
-    placeBuilding(cx - 3, cy - 7, 4, 3, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
+    // Village square and crossing roads
+    for (var y = cy - 1; y <= cy + 2; y++)
+      for (var x = cx - 1; x <= cx + 2; x++) setTile(x, y, T.MARKET_STONE);
+
+    for (var x = cx - 12; x <= cx + 12; x++) {
+      var hCur = tileAt(x, cy);
+      if (hCur !== T.WALL_WOOD && hCur !== T.WALL_STONE && hCur !== T.WOOD_FLOOR) setTile(x, cy, T.DIRT);
+      if (hCur !== T.WALL_WOOD && hCur !== T.WALL_STONE && hCur !== T.WOOD_FLOOR) setTile(x, cy + 1, T.DIRT);
+    }
+    for (var y = cy - 10; y <= cy + 10; y++) {
+      var vCur = tileAt(cx, y);
+      if (vCur !== T.WALL_WOOD && vCur !== T.WALL_STONE && vCur !== T.WOOD_FLOOR) setTile(cx, y, T.DIRT);
+    }
+
+    // Core homes
+    placeBuilding(cx - 11, cy - 8, 6, 5, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
+    placeBuilding(cx + 5, cy - 8, 6, 5, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
+    placeBuilding(cx - 11, cy + 4, 6, 5, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
+    placeBuilding(cx + 5, cy + 4, 6, 5, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
 
     if (settlement.name === 'Millhaven') {
-      placeBuilding(cx + 4, cy - 1, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'shop');
-      locations.millhavenShop = { x: cx + 6, y: cy + 1, name: 'Millhaven Shop' };
-    }
-    if (settlement.name === 'Thornfield') {
-      placeBuilding(cx + 4, cy - 1, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'shop');
-      locations.thornfieldShop = { x: cx + 6, y: cy + 1, name: 'Thornfield Shop' };
+      // KCD2-style village service buildings
+      placeBuilding(cx + 3, cy - 2, 7, 5, T.WALL_WOOD, T.WOOD_FLOOR, 'shop'); // merchant shop
+      placeBuilding(cx - 4, cy - 10, 8, 6, T.WALL_WOOD, T.WOOD_FLOOR, 'tavern'); // village tavern
+      placeBuilding(cx - 2, cy + 5, 6, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'healer_hut'); // healer hut
+      placeBuilding(cx + 9, cy + 6, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'granary'); // grain store
+
+      locations.millhavenShop = { x: cx + 6, y: cy + 1, name: 'Millhaven Mercantile' };
+      locations.millhavenTavern = { x: cx, y: cy - 7, name: 'The Millers Rest' };
+      locations.millhavenHealer = { x: cx + 1, y: cy + 7, name: 'Herbalist Hut' };
+      locations.millhavenGranary = { x: cx + 11, y: cy + 8, name: 'Village Granary' };
     }
 
-    for (var x = cx - 8; x <= cx + 8; x++) {
-      var cur = tileAt(x, cy);
-      if (cur !== T.WALL_WOOD && cur !== T.WALL_STONE && cur !== T.WOOD_FLOOR) setTile(x, cy, T.DIRT);
+    if (settlement.name === 'Thornfield') {
+      placeBuilding(cx + 3, cy - 2, 7, 5, T.WALL_WOOD, T.WOOD_FLOOR, 'shop'); // trading post
+      placeBuilding(cx - 4, cy - 10, 8, 6, T.WALL_WOOD, T.WOOD_FLOOR, 'tavern'); // hunters tavern
+      placeBuilding(cx - 2, cy + 5, 6, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'hunter_lodge');
+      placeBuilding(cx + 9, cy + 6, 5, 4, T.WALL_STONE, T.STONE_FLOOR, 'mine_store');
+
+      locations.thornfieldShop = { x: cx + 6, y: cy + 1, name: 'Thornfield Trading Post' };
+      locations.thornfieldTavern = { x: cx, y: cy - 7, name: 'Boar & Birch Inn' };
+      locations.thornfieldLodge = { x: cx + 1, y: cy + 7, name: 'Hunter Lodge' };
+      locations.thornfieldMine = { x: cx + 11, y: cy + 8, name: 'Ore Storehouse' };
     }
-    for (var y = cy - 6; y <= cy + 6; y++) {
-      var cur = tileAt(cx, y);
-      if (cur !== T.WALL_WOOD && cur !== T.WALL_STONE && cur !== T.WOOD_FLOOR) setTile(cx, y, T.DIRT);
-    }
+
     locations[settlement.name.toLowerCase()] = { x: cx, y: cy, name: settlement.name };
   }
 
@@ -400,7 +420,26 @@ Game.World = (function () {
       setDeco(v.x - 6, v.y - 1, D.BARREL);
       setDeco(v.x + 7, v.y + 2, D.CRATE);
       setDeco(v.x - 2, v.y + 5, D.BENCH);
+
+      // Shared village style touches: road torches + sign board + small market feel
+      setDeco(v.x - 3, v.y - 1, D.MARKET_STALL);
+      setDeco(v.x + 3, v.y + 2, D.MARKET_STALL);
+      setDeco(v.x - 1, v.y - 3, D.SIGN_POST);
+      setDeco(v.x - 8, v.y, D.TORCH);
+      setDeco(v.x + 8, v.y + 1, D.TORCH);
     }
+
+    // Millhaven purpose-driven props (shop, tavern, healer, granary)
+    setDeco(66, 183, D.BENCH); setDeco(67, 183, D.BENCH); // tavern seating
+    setDeco(64, 183, D.BARREL); setDeco(68, 183, D.BARREL);
+    setDeco(67, 197, D.WATER_BUCKET); setDeco(68, 197, D.PLANTER); // healer hut
+    setDeco(77, 198, D.HAY_BALE); setDeco(78, 198, D.CRATE); // granary
+
+    // Thornfield purpose-driven props (tavern, hunter lodge, ore store)
+    setDeco(66, 57, D.BENCH); setDeco(67, 57, D.BENCH);
+    setDeco(64, 57, D.BARREL); setDeco(68, 57, D.BARREL);
+    setDeco(66, 71, D.LOG_PILE); setDeco(67, 71, D.CAMPFIRE); // hunter lodge vibe
+    setDeco(77, 72, D.CRATE); setDeco(78, 72, D.SMALL_ROCK); // ore storehouse
 
     // Fences around farmland (Millhaven)
     for (var x = 49; x < 83; x++) { setDeco(x, 169, D.FENCE_H); setDeco(x, 185, D.FENCE_H); }
@@ -489,9 +528,9 @@ Game.World = (function () {
   }
 
   function storeLocations() {
-    locations.millhaven = { x: 66, y: 190, name: 'Millhaven' };
-    locations.thornfield = { x: 66, y: 64, name: 'Thornfield' };
-    locations.banditCamp = { x: 200, y: 80, name: 'Bandit Camp' };
+    if (!locations.millhaven) locations.millhaven = { x: 66, y: 190, name: 'Millhaven' };
+    if (!locations.thornfield) locations.thornfield = { x: 66, y: 64, name: 'Thornfield' };
+    if (!locations.banditCamp) locations.banditCamp = { x: 200, y: 80, name: 'Bandit Camp' };
     locations.playerStart = { x: 66, y: 195, name: 'Player Start' };
   }
 

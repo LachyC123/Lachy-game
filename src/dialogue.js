@@ -66,6 +66,11 @@ Game.Dialogue = (function () {
 
     // Standard options
     options.push({ text: 'Tell me about this place.', action: 'askAboutPlace' });
+    options.push({ text: 'Tell me about your lifestyle.', action: 'askLifestyle' });
+    options.push({ text: 'What do you do for work?', action: 'askJob' });
+    if (npc.relationships && npc.relationships.length > 0) {
+      options.push({ text: 'How are things with people around you?', action: 'askRelationships' });
+    }
 
     if (rel > -30) {
       options.push({ text: 'Any news or rumors?', action: 'askRumors' });
@@ -106,6 +111,15 @@ Game.Dialogue = (function () {
       case 'askAboutPlace':
         respondAboutPlace();
         break;
+      case 'askLifestyle':
+        respondLifestyle();
+        break;
+      case 'askJob':
+        respondJob();
+        break;
+      case 'askRelationships':
+        respondRelationships();
+        break;
       case 'askRumors':
         respondRumors();
         break;
@@ -145,13 +159,67 @@ Game.Dialogue = (function () {
     var loc = npc.currentLocation;
     var responses = {
       ashford: 'Ashford is the main town in this region. The King rules from the castle. You will find merchants in the market square, and the tavern is west of it. Stay out of trouble with the guards.',
-      millhaven: 'Millhaven is a quiet farming village. We grow grain and keep to ourselves. The road north leads to Ashford.',
-      thornfield: 'Thornfield sits near the forest edge. Henrik the woodcutter braves the woods daily. Beware the eastern forest - bandits lurk there.',
+      millhaven: 'Millhaven is a farming village with a mercantile, granary, healer hut and a proper tavern now. Traders stop here before heading north to Ashford.',
+      thornfield: 'Thornfield sits on the forest edge with a trading post, hunter lodge, ore storehouse and a rough tavern for foresters. Beware the eastern forest - bandits lurk there.',
       banditCamp: 'This? Just a camp. We take what we need from those who have too much. The strong survive.',
       wilderness: 'Not much to say about the wild. Stay on the roads if you value your hide.',
       forest: 'These woods are deep and dark. Not safe for the unwary.'
     };
     dialogueText = responses[loc] || 'There is not much to tell about this place.';
+    currentNPC.playerRelation += 1;
+    Game.Player.gainSkill('speech', 0.05);
+    rebuildWithBack();
+  }
+
+  function respondLifestyle() {
+    var npc = currentNPC;
+    var lines = {
+      family: 'Most everything I do is for my family. A steady day and safe home is enough for me.',
+      ambitious: 'I am not content to stay where I am. Every day is a step toward something greater.',
+      devout: 'Routine keeps me grounded - prayer, work, and trying to live honorably.',
+      frugal: 'I keep my purse tight and my plans practical. Waste ruins good folk.',
+      hedonist: 'Life is short. Better to enjoy it while we can.',
+      outdoorsy: 'I sleep best after a day under open skies.',
+      scholarly: 'I like to learn before I act. Knowledge saves lives.',
+      community: 'A town survives when people look after one another.'
+    };
+    dialogueText = lines[npc.lifestyle] || 'I live one day at a time, like most people.';
+    currentNPC.playerRelation += 1;
+    Game.Player.gainSkill('speech', 0.04);
+    rebuildWithBack();
+  }
+
+  function respondJob() {
+    var npc = currentNPC;
+    var jobLabel = Game.NPC.getJobLabel(npc.job);
+    dialogueText = 'I work as a ' + jobLabel.toLowerCase() + '. It is honest work, and it keeps food on the table.';
+    if (npc.job === 'guard') dialogueText = 'I serve as a guard. We keep Ashford safe and the peace intact.';
+    if (npc.job === 'bandit') dialogueText = 'Work? We take what we need. The road is our trade.';
+    currentNPC.playerRelation += 1;
+    Game.Player.gainSkill('speech', 0.03);
+    rebuildWithBack();
+  }
+
+  function respondRelationships() {
+    var npc = currentNPC;
+    if (!npc.relationships || npc.relationships.length === 0) {
+      dialogueText = 'I mostly keep to myself.';
+      rebuildWithBack();
+      return;
+    }
+
+    var rel = U.pick(npc.relationships);
+    var others = Game.NPC.getNPCs();
+    var other = others[rel.withId];
+    var person = other ? other.name.full : 'someone around town';
+    var tone = rel.affinity >= 20 ? 'We get on well.' : (rel.affinity <= -20 ? 'We do not see eye to eye.' : 'Things are... manageable.');
+
+    if (rel.type === 'family') dialogueText = person + ' is family. ' + tone;
+    else if (rel.type === 'friend') dialogueText = person + ' is a good friend. ' + tone;
+    else if (rel.type === 'rival') dialogueText = person + ' is my rival. ' + tone;
+    else if (rel.type === 'partner') dialogueText = person + ' is my partner. ' + tone;
+    else dialogueText = person + ' and I work together often. ' + tone;
+
     currentNPC.playerRelation += 1;
     Game.Player.gainSkill('speech', 0.05);
     rebuildWithBack();
