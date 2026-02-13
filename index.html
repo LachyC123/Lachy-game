@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0a0806">
+  <title>Ashford: Frontier Kingdom</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Load order matters: dependencies first -->
+  <script src="src/utils.js"></script>
+  <script src="src/world.js"></script>
+  <script src="src/economy.js"></script>
+  <script src="src/input.js"></script>
+  <script src="src/player.js"></script>
+  <script src="src/npc.js"></script>
+  <script src="src/combat.js"></script>
+  <script src="src/dialogue.js"></script>
+  <script src="src/law.js"></script>
+  <script src="src/save.js"></script>
+  <script src="src/renderer.js"></script>
+  <script src="src/ui.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>
