@@ -210,6 +210,11 @@ Game.Player = (function () {
     if (player.blocking) {
       actual *= 0.2;
       player.stamina -= amount * 0.5;
+      // Block shake (small)
+      if (Game.Renderer && Game.Renderer.triggerShake) Game.Renderer.triggerShake(2);
+    } else {
+      // Hit shake
+      if (Game.Renderer && Game.Renderer.triggerShake) Game.Renderer.triggerShake(actual > 15 ? 8 : 4);
     }
     if (player.equipped.armor) {
       actual *= (1 - (player.equipped.armor.defense || 0) * 0.01);

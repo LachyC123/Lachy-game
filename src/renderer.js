@@ -14,6 +14,12 @@ Game.Renderer = (function () {
   // Animation clock
   var animTime = 0;
 
+  // Screen shake
+  var shakeIntensity = 0;
+  var shakeDecay = 8;
+  var shakeOffsetX = 0;
+  var shakeOffsetY = 0;
+
   function init(cvs) {
     canvas = cvs;
     ctx = canvas.getContext('2d');
@@ -51,10 +57,27 @@ Game.Renderer = (function () {
 
     updateParticles(dt);
     spawnAmbientParticles(dt);
+
+    // Screen shake decay
+    if (shakeIntensity > 0.1) {
+      shakeOffsetX = (Math.random() - 0.5) * shakeIntensity;
+      shakeOffsetY = (Math.random() - 0.5) * shakeIntensity;
+      shakeIntensity *= Math.pow(0.01, dt); // rapid decay
+    } else {
+      shakeOffsetX = 0; shakeOffsetY = 0; shakeIntensity = 0;
+    }
+  }
+
+  function triggerShake(intensity) {
+    shakeIntensity = Math.max(shakeIntensity, intensity);
   }
 
   function render() {
     ctx.clearRect(0, 0, screenW, screenH);
+
+    // Apply screen shake
+    ctx.save();
+    if (shakeIntensity > 0.1) ctx.translate(shakeOffsetX, shakeOffsetY);
 
     var startCX = Math.max(0, Math.floor(camera.x / (CS * TS)));
     var startCY = Math.max(0, Math.floor(camera.y / (CS * TS)));
@@ -110,12 +133,21 @@ Game.Renderer = (function () {
     // Day/night
     renderDayNight();
 
+    // Morning fog
+    renderFog();
+
     // Speech bubbles after overlay
     for (var i = 0; i < entities.length; i++) {
       var e = entities[i];
       if (e.isPlayer || e.isWildlife || !e.alive) continue;
       renderSpeechBubble(ctx, Math.floor(e.x - camera.x), Math.floor(e.y - camera.y), e);
     }
+
+    // Stealth visibility indicator
+    renderStealthMeter();
+
+    // End screen shake transform
+    ctx.restore();
   }
 
   function collectVisibleEntities() {
@@ -330,9 +362,20 @@ Game.Renderer = (function () {
       }
     }
 
-    // Dust particles when moving
+    // Surface-aware footstep particles
     if (moving && Math.random() < 0.3) {
-      spawnParticle(ps.x - Math.cos(fAngle) * 6, ps.y + 10, 'dust');
+      var footTile = W.tileAt(Math.floor(ps.x / TS), Math.floor(ps.y / TS));
+      var footX = ps.x - Math.cos(fAngle) * 6;
+      var footY = ps.y + 10;
+      if (footTile === W.T.WATER || footTile === W.T.BRIDGE) {
+        spawnParticle(footX, footY, 'splash');
+      } else if (footTile === W.T.SAND) {
+        spawnParticle(footX, footY, 'sand');
+      } else if (footTile === W.T.GRASS || footTile === W.T.FOREST_FLOOR) {
+        if (Math.random() < 0.15) spawnParticle(footX, footY, 'leaf');
+      } else {
+        spawnParticle(footX, footY, 'dust');
+      }
     }
 
     ctx.restore();
@@ -648,6 +691,63 @@ Game.Renderer = (function () {
       ctx.fillText('z', sx + 15, bodyY - 26 + zzOff * 0.5);
     }
 
+    // === ALERT / AWARENESS ICON ===
+    if (npc.alertIcon && npc.alertIconTimer > 0) {
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      var iconBob = Math.sin(animTime * 6) * 2;
+      ctx.fillStyle = npc.alertIcon === '!' ? '#e04040' : '#e0c040';
+      ctx.fillText(npc.alertIcon, sx, bodyY - getNameOffset(npc) - 8 + iconBob);
+    }
+
+    // === TOOL-USE ANIMATION (when working) ===
+    if (npc.state === 'work' && !moving) {
+      var toolPhase = npc.activityAnim || 0;
+      var toolSwing = Math.sin(toolPhase) * 0.4;
+      if (npc.job === 'blacksmith') {
+        // Hammer striking anvil
+        ctx.save();
+        ctx.translate(sx + 6, bodyY - 2);
+        ctx.rotate(-0.3 + toolSwing);
+        ctx.fillStyle = '#6a5a4a';
+        ctx.fillRect(0, -1, 2, 10);
+        ctx.fillStyle = '#8a8a8a';
+        ctx.fillRect(-1, 8, 4, 4);
+        ctx.restore();
+      } else if (npc.job === 'farmer') {
+        // Hoe motion
+        ctx.save();
+        ctx.translate(sx + 5, bodyY - 4);
+        ctx.rotate(-0.5 + toolSwing * 1.2);
+        ctx.fillStyle = '#6a4a20';
+        ctx.fillRect(0, 0, 2, 14);
+        ctx.fillStyle = '#8a8a8a';
+        ctx.fillRect(-2, 12, 6, 2);
+        ctx.restore();
+      } else if (npc.job === 'woodcutter') {
+        // Axe swing
+        ctx.save();
+        ctx.translate(sx + 6, bodyY - 3);
+        ctx.rotate(-0.4 + toolSwing * 1.5);
+        ctx.fillStyle = '#5a3a18';
+        ctx.fillRect(0, 0, 2, 12);
+        ctx.fillStyle = '#999';
+        ctx.beginPath();
+        ctx.moveTo(0, 10); ctx.lineTo(5, 12); ctx.lineTo(0, 14);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // === LIMP when badly hurt ===
+    if (npc.health < npc.maxHealth * 0.35 && npc.health > 0) {
+      // Small indicator: hunched posture already via lower bob, plus a subtle marker
+      ctx.fillStyle = 'rgba(200,50,50,0.4)';
+      ctx.font = '8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('wounded', sx, sy + 16);
+    }
+
     ctx.restore();
   }
 
@@ -706,6 +806,27 @@ Game.Renderer = (function () {
         p.size = 1;
         p.color = [255, 200, 100];
         break;
+      case 'splash':
+        p.vx = (Math.random() - 0.5) * 18;
+        p.vy = -12 - Math.random() * 10;
+        p.maxLife = 0.3 + Math.random() * 0.2;
+        p.size = 1.5 + Math.random();
+        p.color = [100, 160, 220];
+        break;
+      case 'sand':
+        p.vx = (Math.random() - 0.5) * 12;
+        p.vy = -6 - Math.random() * 5;
+        p.maxLife = 0.3 + Math.random() * 0.2;
+        p.size = 1 + Math.random();
+        p.color = [200, 180, 120];
+        break;
+      case 'leaf':
+        p.vx = (Math.random() - 0.5) * 20;
+        p.vy = -8 - Math.random() * 6;
+        p.maxLife = 0.8 + Math.random() * 0.5;
+        p.size = 2;
+        p.color = [60 + (Math.random() * 40 | 0), 100 + (Math.random() * 40 | 0), 30];
+        break;
     }
     particles.push(p);
   }
@@ -718,8 +839,10 @@ Game.Renderer = (function () {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (p.type === 'smoke') { p.vy *= 0.98; p.size += dt * 2; }
-      if (p.type === 'dust') p.vy += 20 * dt; // gravity
+      if (p.type === 'dust' || p.type === 'sand') p.vy += 20 * dt;
       if (p.type === 'ember') p.vy += 10 * dt;
+      if (p.type === 'splash') p.vy += 35 * dt;
+      if (p.type === 'leaf') { p.vy += 8 * dt; p.vx += Math.sin(p.life * 5) * 10 * dt; }
     }
   }
 
@@ -926,6 +1049,95 @@ Game.Renderer = (function () {
     grad.addColorStop(1, 'rgba(200,100,30,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
+  }
+
+  // ======= FOG =======
+
+  function renderFog() {
+    if (!Game.time) return;
+    var hour = (Game.time / 60) % 24;
+    // Morning fog: 4am-8am, peaks at 6am
+    var fogAmount = 0;
+    if (hour >= 4 && hour < 8) {
+      fogAmount = hour < 6 ? (hour - 4) / 2 : 1 - (hour - 6) / 2;
+    }
+    // Weather adds fog
+    if (Game.Ambient) {
+      var w = Game.Ambient.getWeather();
+      if (w.type === 'rain') fogAmount = Math.max(fogAmount, 0.15);
+      if (w.type === 'storm') fogAmount = Math.max(fogAmount, 0.1);
+    }
+    // Forest increases fog
+    var p = Game.Player.getState();
+    var tile = W.tileAt(Math.floor(p.x / TS), Math.floor(p.y / TS));
+    if (tile === W.T.FOREST_FLOOR) fogAmount *= 1.4;
+    // Near water
+    if (tile === W.T.SAND) fogAmount *= 1.2;
+
+    fogAmount = U.clamp(fogAmount, 0, 0.45);
+    if (fogAmount < 0.01) return;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(200,200,210,' + (fogAmount * 0.5) + ')';
+    ctx.fillRect(0, 0, screenW, screenH);
+    // Wispy fog patches
+    ctx.globalAlpha = fogAmount * 0.3;
+    ctx.fillStyle = '#d0d0d8';
+    for (var i = 0; i < 6; i++) {
+      var fx = ((animTime * 12 + i * 200) % (screenW + 300)) - 150;
+      var fy = screenH * 0.3 + Math.sin(animTime * 0.5 + i * 1.5) * screenH * 0.25;
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, 100 + i * 20, 25 + i * 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ======= STEALTH VISIBILITY METER =======
+
+  function renderStealthMeter() {
+    var p = Game.Player.getState();
+    if (p.skills.stealth < 3) return; // don't show until some stealth skill
+    var hour = Game.time ? ((Game.time / 60) % 24) : 12;
+    var tile = W.tileAt(Math.floor(p.x / TS), Math.floor(p.y / TS));
+
+    // Calculate visibility
+    var visibility = 1.0;
+    if (hour >= 20 || hour < 5) visibility *= 0.5;
+    else if (hour >= 18 || hour < 7) visibility *= 0.75;
+    if (tile === W.T.FOREST_FLOOR) visibility *= 0.6;
+    if (tile === W.T.GRASS && W.hasTree(Math.floor(p.x / TS), Math.floor(p.y / TS))) visibility *= 0.7;
+    // Moving increases visibility
+    var m = Game.Input.getMovement();
+    if (m.x !== 0 || m.y !== 0) visibility *= 1.3;
+    visibility = U.clamp(visibility, 0.1, 1.0);
+
+    // Draw small eye icon with fill
+    var ix = 15, iy = 90;
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    // Eye outline
+    ctx.strokeStyle = '#c0b890';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ix, iy);
+    ctx.quadraticCurveTo(ix + 10, iy - 5, ix + 20, iy);
+    ctx.quadraticCurveTo(ix + 10, iy + 5, ix, iy);
+    ctx.stroke();
+    // Fill based on visibility
+    ctx.fillStyle = visibility > 0.7 ? '#c06030' : visibility > 0.4 ? '#a0a040' : '#408040';
+    ctx.globalAlpha = 0.4 + visibility * 0.3;
+    ctx.beginPath();
+    ctx.arc(ix + 10, iy, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Label
+    ctx.globalAlpha = 0.5;
+    ctx.font = '8px sans-serif';
+    ctx.fillStyle = '#c0b890';
+    ctx.textAlign = 'left';
+    var visLabel = visibility > 0.7 ? 'Exposed' : visibility > 0.4 ? 'Visible' : 'Hidden';
+    ctx.fillText(visLabel, ix + 24, iy + 3);
+    ctx.restore();
   }
 
   // ======= WATER SHIMMER OVERLAY =======
@@ -1213,6 +1425,6 @@ Game.Renderer = (function () {
   return {
     init: init, resize: resize, updateCamera: updateCamera, render: render,
     worldToScreen: worldToScreen, screenToWorld: screenToWorld, getCamera: getCamera,
-    spawnParticle: spawnParticle
+    spawnParticle: spawnParticle, triggerShake: triggerShake
   };
 })();

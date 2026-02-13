@@ -85,6 +85,11 @@ Game.Combat = (function () {
       // Damage number
       addDamageNumber(npc.x, npc.y - 20, actual);
 
+      // Screen shake on hit (heavier for heavy attacks)
+      if (Game.Renderer.triggerShake) {
+        Game.Renderer.triggerShake(type === 'heavy' ? 6 : 3);
+      }
+
       // Swing effect
       addEffect('slash', player.x, player.y, arc.angle, 0.2);
 
