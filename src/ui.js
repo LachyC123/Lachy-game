@@ -362,7 +362,8 @@ Game.UI = (function () {
     ctx.fillStyle = '#d4a030';
     ctx.textAlign = 'left';
     if (npc) {
-      ctx.fillText(npc.name.full + ' (' + (npc.job === 'tavernKeeper' ? 'Tavern Keeper' : npc.job.charAt(0).toUpperCase() + npc.job.slice(1)) + ')', dX + 15, dY + 22);
+      var jobLabel = Game.NPC.getJobLabel ? Game.NPC.getJobLabel(npc.job) : (npc.job === 'tavernKeeper' ? 'Tavern Keeper' : npc.job.charAt(0).toUpperCase() + npc.job.slice(1));
+      ctx.fillText(npc.name.full + ' (' + jobLabel + ')', dX + 15, dY + 22);
     }
 
     // Dialogue text
