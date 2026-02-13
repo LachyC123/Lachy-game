@@ -69,10 +69,19 @@ Game.Ambient = (function () {
     if (weather.changeTimer >= weather.nextChange) {
       weather.changeTimer = 0;
       weather.nextChange = U.randFloat(120, 500);
-      var newType = U.pick(WEATHER_TYPES);
+      var day = Game.day || 1;
+      var season = day % 40;
+      var seasonalPool = WEATHER_TYPES.slice();
+      // crude seasonal drift to make world feel less static
+      if (season < 10) seasonalPool = seasonalPool.concat(['clear', 'cloudy']);
+      else if (season < 20) seasonalPool = seasonalPool.concat(['cloudy', 'overcast']);
+      else if (season < 30) seasonalPool = seasonalPool.concat(['rain', 'overcast', 'rain']);
+      else seasonalPool = seasonalPool.concat(['storm', 'rain', 'overcast']);
+
+      var newType = U.pick(seasonalPool);
       weather.type = newType;
       weather.wind = U.randFloat(-0.6, 0.6);
-      weather.temperature = 10 + U.rng() * 14;
+      weather.temperature = 8 + U.rng() * 16;
       switch (newType) {
         case 'clear': weather.intensity = 0; break;
         case 'cloudy': weather.intensity = 0.15; break;
@@ -533,6 +542,38 @@ Game.Ambient = (function () {
         case 'woodcutter':
           barks.push('*thwack*', 'Good timber.', 'One more and I can rest.',
                      'The forest provides.', 'Mind the splinters.');
+          break;
+        case 'carpenter':
+          barks.push('*scrape*', 'This frame needs one more brace.', 'Careful with the grain.',
+                     'A square joint lasts for years.', 'Hand me the mallet.');
+          break;
+        case 'mason':
+          barks.push('Stonework keeps the rain out.', 'Mortar is setting nicely.', 'Another wall to raise.',
+                     'Mind the rubble.', '*tap tap*');
+          break;
+        case 'fisherman':
+          barks.push('Fish were biting at dawn.', 'Need to mend these nets.', 'River current is strong today.',
+                     'The catch feeds half the village.', 'Boats need patching too.');
+          break;
+        case 'baker':
+          barks.push('The oven is blazing hot.', 'Fresh loaves in a moment.', 'Dough needs one more rise.',
+                     'Everyone wants bread by noon.', 'Mind the crust.');
+          break;
+        case 'tailor':
+          barks.push('Hold still for your fitting.', 'This hem needs a clean line.', 'Fine cloth is hard to get.',
+                     'A good stitch saves a coat.', '*snip snip*');
+          break;
+        case 'butcher':
+          barks.push('Sharp knives, steady hands.', 'Nothing from the animal is wasted.', 'Need more curing salt.',
+                     'Order for the tavern is next.', 'Best cuts go quickly.');
+          break;
+        case 'cooper':
+          barks.push('These hoops must sit tight.', 'Leaky casks ruin good ale.', 'Oak staves only.',
+                     'Another barrel almost done.', '*thunk thunk*');
+          break;
+        case 'potter':
+          barks.push('Clay is perfect after rain.', 'Kiln firing soon.', 'Steady at the wheel now.',
+                     'Glaze this one in blue.', 'Careful, that pot is still wet.');
           break;
       }
     }

@@ -263,7 +263,28 @@ Game.Player = (function () {
 
   function gainSkill(skill, amount) {
     if (player.skills[skill] !== undefined) {
+      var before = player.skills[skill];
       player.skills[skill] = Math.min(100, player.skills[skill] + amount);
+      var after = player.skills[skill];
+
+      // Milestone progression boosts
+      var milestones = [20, 40, 60, 80];
+      for (var i = 0; i < milestones.length; i++) {
+        var m = milestones[i];
+        if (before < m && after >= m) {
+          if (skill === 'sword') {
+            player.maxStamina += 2;
+            player.stamina = Math.min(player.maxStamina, player.stamina + 6);
+          } else if (skill === 'stealth') {
+            player.speed += 1.5;
+          } else if (skill === 'speech') {
+            player.reputation.global = U.clamp(player.reputation.global + 1, -100, 100);
+          }
+          if (Game.UI && Game.UI.showNotification) {
+            Game.UI.showNotification(skill.toUpperCase() + ' skill reached ' + m + '!');
+          }
+        }
+      }
     }
   }
 
