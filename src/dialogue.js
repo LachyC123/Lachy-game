@@ -189,9 +189,15 @@ Game.Dialogue = (function () {
     rebuildWithBack();
   }
 
+  function getDisplayJobLabel(job) {
+    if (Game.NPC && typeof Game.NPC.getJobLabel === 'function') return Game.NPC.getJobLabel(job);
+    if (job === 'tavernKeeper') return 'Tavern Keeper';
+    return job ? job.charAt(0).toUpperCase() + job.slice(1) : 'Commoner';
+  }
+
   function respondJob() {
     var npc = currentNPC;
-    var jobLabel = Game.NPC.getJobLabel ? Game.NPC.getJobLabel(npc.job) : (npc.job === 'tavernKeeper' ? 'Tavern Keeper' : npc.job.charAt(0).toUpperCase() + npc.job.slice(1));
+    var jobLabel = getDisplayJobLabel(npc.job);
     dialogueText = 'I work as a ' + jobLabel.toLowerCase() + '. It is honest work, and it keeps food on the table.';
     if (npc.job === 'guard') dialogueText = 'I serve as a guard. We keep Ashford safe and the peace intact.';
     if (npc.job === 'bandit') dialogueText = 'Work? We take what we need. The road is our trade.';
