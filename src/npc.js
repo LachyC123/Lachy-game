@@ -299,6 +299,10 @@ Game.NPC = (function () {
       currentLocation: opts.location || 'wilderness',
       // Activity & immersion
       activityAnim: 0,       // phase counter for tool use animation
+      workTaskTimer: 0,      // how long to stay put and perform work task
+      workTaskCooldown: 0,   // delay before selecting another stationary task
+      workAnchorX: 0,        // where current task is performed
+      workAnchorY: 0,
       alertIcon: '',         // '!' or '?' shown above head
       alertIconTimer: 0,
       greetedPlayer: false,  // has greeted player this encounter
@@ -976,25 +980,59 @@ Game.NPC = (function () {
         break;
       case STATE.WORK:
         npc.state = STATE.WORK;
-        moveToward(npc, npc.work.x, npc.work.y, dt, 1.0);
-        if (U.distSq(npc.x, npc.y, npc.work.x, npc.work.y) < 400) {
-          // Wander near work
-          if (npc.wanderTimer <= 0) {
-            npc.targetX = npc.work.x + U.randFloat(-48, 48);
-            npc.targetY = npc.work.y + U.randFloat(-48, 48);
-            npc.hasTarget = true;
-            npc.wanderTimer = U.randFloat(3, 8);
-          } else {
-            npc.wanderTimer -= dt;
-            if (npc.hasTarget) moveToward(npc, npc.targetX, npc.targetY, dt, 0.5);
+        var distToWork = U.distSq(npc.x, npc.y, npc.work.x, npc.work.y);
+
+        // Travel to work spot first
+        if (distToWork >= 500) {
+          npc.workTaskTimer = 0;
+          moveToward(npc, npc.work.x, npc.work.y, dt, 1.0);
+        } else {
+          // Decay timers
+          if (npc.workTaskCooldown > 0) npc.workTaskCooldown -= dt;
+          if (npc.workTaskTimer > 0) npc.workTaskTimer -= dt;
+
+          // Start a focused stationary task (so tool animations can play)
+          if (npc.workTaskTimer <= 0 && npc.workTaskCooldown <= 0) {
+            npc.workAnchorX = npc.work.x + U.randFloat(-28, 28);
+            npc.workAnchorY = npc.work.y + U.randFloat(-28, 28);
+            npc.workTaskTimer = U.randFloat(2.8, 6.0);
+            npc.workTaskCooldown = U.randFloat(0.8, 1.8);
+            npc.hasTarget = false;
           }
-          // Work barks (now context-aware)
-          if (npc.barkTimer <= 0 && U.rng() < 0.006) {
+
+          if (npc.workTaskTimer > 0) {
+            // Move to anchor if needed, otherwise stand and perform task
+            if (U.distSq(npc.x, npc.y, npc.workAnchorX, npc.workAnchorY) > 64) {
+              moveToward(npc, npc.workAnchorX, npc.workAnchorY, dt, 0.5);
+            } else {
+              npc.vx = 0;
+              npc.vy = 0;
+              // subtle facing changes to avoid frozen look
+              if (U.rng() < 0.02) {
+                npc.facing = U.pick(['N', 'S', 'E', 'W']);
+              }
+            }
+          } else {
+            // Between tasks: short movement around workshop
+            if (npc.wanderTimer <= 0) {
+              npc.targetX = npc.work.x + U.randFloat(-40, 40);
+              npc.targetY = npc.work.y + U.randFloat(-40, 40);
+              npc.hasTarget = true;
+              npc.wanderTimer = U.randFloat(1.5, 3.5);
+            } else {
+              npc.wanderTimer -= dt;
+              if (npc.hasTarget) moveToward(npc, npc.targetX, npc.targetY, dt, 0.45);
+            }
+          }
+
+          // Work barks (context-aware)
+          if (npc.barkTimer <= 0 && U.rng() < 0.008) {
             var ctxBark = Game.Ambient ? Game.Ambient.getContextBark(npc, 'work') : null;
             setBark(npc, ctxBark || U.pick(getWorkBarks(npc.job)));
           }
         }
         break;
+
       case STATE.PATROL:
         npc.state = STATE.PATROL;
         if (npc.patrolPoints.length > 0) {
