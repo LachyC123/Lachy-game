@@ -120,6 +120,9 @@ Game.UI = (function () {
     W = window.innerWidth;
     H = window.innerHeight;
 
+    // Re-register buttons each frame (clears dialogue buttons from last frame)
+    positionButtons();
+
     // HUD
     renderHealthStamina();
     renderMiniInfo();
@@ -233,6 +236,41 @@ Game.UI = (function () {
       banditCamp: 'Bandit Camp', forest: 'Forest', wilderness: 'Wilderness'
     };
     ctx.fillText(locNames[loc] || loc, x, y);
+    y += 16;
+
+    // Quick action buttons (mobile-friendly)
+    var qbSize = 28;
+    var qbX = W - qbSize - 10;
+    var qbY = y + 4;
+
+    // Inventory button
+    ctx.fillStyle = 'rgba(60,50,30,0.6)';
+    roundRect(ctx, qbX, qbY, qbSize, qbSize, 4);
+    ctx.fill();
+    ctx.fillStyle = '#d4a030';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('I', qbX + qbSize / 2, qbY + qbSize / 2 + 4);
+    Game.Input.registerButton('inventory', qbX, qbY, qbSize, qbSize);
+
+    // Save button
+    qbX -= qbSize + 6;
+    ctx.fillStyle = 'rgba(60,50,30,0.6)';
+    roundRect(ctx, qbX, qbY, qbSize, qbSize, 4);
+    ctx.fill();
+    ctx.fillStyle = '#6a8a4a';
+    ctx.fillText('S', qbX + qbSize / 2, qbY + qbSize / 2 + 4);
+    Game.Input.registerButton('save', qbX, qbY, qbSize, qbSize);
+
+    // Debug button
+    qbX -= qbSize + 6;
+    ctx.fillStyle = 'rgba(60,50,30,0.6)';
+    roundRect(ctx, qbX, qbY, qbSize, qbSize, 4);
+    ctx.fill();
+    ctx.fillStyle = '#8a8a8a';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('DB', qbX + qbSize / 2, qbY + qbSize / 2 + 3);
+    Game.Input.registerButton('debug', qbX, qbY, qbSize, qbSize);
 
     ctx.restore();
   }
@@ -500,7 +538,39 @@ Game.UI = (function () {
     ctx.font = '14px sans-serif';
     ctx.fillStyle = '#aa8060';
     ctx.fillText('The frontier claims another soul.', W / 2, H / 2 + 10);
-    ctx.fillText('Press F9 to load your last save.', W / 2, H / 2 + 40);
+
+    // Load button
+    var btnW = 160, btnH = 40;
+    var btnX = W / 2 - btnW / 2;
+    var btnY = H / 2 + 50;
+    ctx.fillStyle = 'rgba(80,50,30,0.8)';
+    roundRect(ctx, btnX, btnY, btnW, btnH, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#aa8060';
+    ctx.lineWidth = 1;
+    roundRect(ctx, btnX, btnY, btnW, btnH, 6);
+    ctx.stroke();
+    ctx.fillStyle = '#e8dcc8';
+    ctx.font = '14px sans-serif';
+    ctx.fillText('Load Last Save', W / 2, btnY + 25);
+
+    // Register button
+    Game.Input.registerButton('deathLoad', btnX, btnY, btnW, btnH);
+
+    // Handle load
+    if (Game.Input.isAction('deathLoad') || Game.Input.isAction('load')) {
+      Game.Input.consumeAction('deathLoad');
+      Game.Input.consumeAction('load');
+      if (Game.Save.hasSave()) {
+        Game.Save.load();
+        deathScreen = false;
+      } else {
+        showNotification('No save found. Restarting...');
+        // Full restart
+        Game.Player.init();
+        deathScreen = false;
+      }
+    }
 
     ctx.restore();
   }

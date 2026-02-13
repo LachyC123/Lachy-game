@@ -114,11 +114,10 @@ Game.Renderer = (function () {
       });
     }
 
-    // NPCs
+    // NPCs (include dead for body rendering)
     var npcs = Game.NPC.getNPCs();
     for (var i = 0; i < npcs.length; i++) {
       var n = npcs[i];
-      if (!n.alive) continue;
       if (n.x < camera.x - pad || n.x > camera.x + camera.w + pad) continue;
       if (n.y < camera.y - pad || n.y > camera.y + camera.h + pad) continue;
       entities.push(n);
@@ -212,6 +211,29 @@ Game.Renderer = (function () {
   function drawNPC(ctx, sx, sy, npc) {
     ctx.save();
 
+    // Dead body
+    if (!npc.alive) {
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.beginPath();
+      ctx.ellipse(sx, sy + 6, 10, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Fallen body (horizontal)
+      ctx.fillStyle = npc.bodyColor || '#5a5040';
+      ctx.fillRect(sx - 10, sy - 2, 20, 8);
+      ctx.fillStyle = npc.headColor || '#d0a080';
+      ctx.beginPath();
+      ctx.arc(sx - 12, sy + 2, 5, 0, Math.PI * 2);
+      ctx.fill();
+      // Blood pool
+      ctx.fillStyle = 'rgba(120,20,20,0.4)';
+      ctx.beginPath();
+      ctx.ellipse(sx + 4, sy + 4, 8, 5, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
     // Shadow
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath();
@@ -282,6 +304,24 @@ Game.Renderer = (function () {
       ctx.beginPath();
       ctx.arc(sx + U.randFloat(-4, 4), sy + 6, 2, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    // Name label (show when player is close)
+    var p = Game.Player.getState();
+    var distToPlayer = U.dist(npc.x, npc.y, p.x, p.y);
+    if (distToPlayer < 80) {
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = 'rgba(220,210,180,0.8)';
+      ctx.textAlign = 'center';
+      ctx.fillText(npc.name.first, sx, sy - 22);
+    }
+
+    // Sleep zzz
+    if (npc.state === 'sleep') {
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = 'rgba(200,200,255,0.6)';
+      ctx.textAlign = 'center';
+      ctx.fillText('z z z', sx + 8, sy - 22);
     }
 
     ctx.restore();
