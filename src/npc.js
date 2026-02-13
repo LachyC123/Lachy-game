@@ -106,6 +106,94 @@ Game.NPC = (function () {
         { start: 21, end: 5, state: STATE.SLEEP }
       ]
     },
+    carpenter: {
+      label: 'Carpenter',
+      schedule: [
+        { start: 6, end: 7, state: STATE.TRAVEL, target: 'work' },
+        { start: 7, end: 12, state: STATE.WORK },
+        { start: 12, end: 13, state: STATE.SOCIALIZE },
+        { start: 13, end: 18, state: STATE.WORK },
+        { start: 18, end: 21, state: STATE.SOCIALIZE },
+        { start: 21, end: 6, state: STATE.SLEEP }
+      ]
+    },
+    mason: {
+      label: 'Mason',
+      schedule: [
+        { start: 6, end: 7, state: STATE.TRAVEL, target: 'work' },
+        { start: 7, end: 12, state: STATE.WORK },
+        { start: 12, end: 13, state: STATE.SOCIALIZE },
+        { start: 13, end: 17, state: STATE.WORK },
+        { start: 17, end: 20, state: STATE.SOCIALIZE },
+        { start: 20, end: 6, state: STATE.SLEEP }
+      ]
+    },
+    fisherman: {
+      label: 'Fisherman',
+      schedule: [
+        { start: 4, end: 5, state: STATE.TRAVEL, target: 'work' },
+        { start: 5, end: 11, state: STATE.WORK },
+        { start: 11, end: 13, state: STATE.SOCIALIZE },
+        { start: 13, end: 17, state: STATE.WORK },
+        { start: 17, end: 20, state: STATE.SOCIALIZE },
+        { start: 20, end: 4, state: STATE.SLEEP }
+      ]
+    },
+    baker: {
+      label: 'Baker',
+      schedule: [
+        { start: 4, end: 5, state: STATE.TRAVEL, target: 'work' },
+        { start: 5, end: 12, state: STATE.WORK },
+        { start: 12, end: 14, state: STATE.SOCIALIZE },
+        { start: 14, end: 18, state: STATE.WORK },
+        { start: 18, end: 21, state: STATE.IDLE },
+        { start: 21, end: 4, state: STATE.SLEEP }
+      ]
+    },
+    tailor: {
+      label: 'Tailor',
+      schedule: [
+        { start: 7, end: 8, state: STATE.TRAVEL, target: 'work' },
+        { start: 8, end: 12, state: STATE.WORK },
+        { start: 12, end: 13, state: STATE.SOCIALIZE },
+        { start: 13, end: 18, state: STATE.WORK },
+        { start: 18, end: 21, state: STATE.SOCIALIZE },
+        { start: 21, end: 7, state: STATE.SLEEP }
+      ]
+    },
+    butcher: {
+      label: 'Butcher',
+      schedule: [
+        { start: 6, end: 7, state: STATE.TRAVEL, target: 'work' },
+        { start: 7, end: 13, state: STATE.WORK },
+        { start: 13, end: 14, state: STATE.SOCIALIZE },
+        { start: 14, end: 18, state: STATE.WORK },
+        { start: 18, end: 21, state: STATE.IDLE },
+        { start: 21, end: 6, state: STATE.SLEEP }
+      ]
+    },
+    cooper: {
+      label: 'Cooper',
+      schedule: [
+        { start: 6, end: 7, state: STATE.TRAVEL, target: 'work' },
+        { start: 7, end: 12, state: STATE.WORK },
+        { start: 12, end: 13, state: STATE.SOCIALIZE },
+        { start: 13, end: 17, state: STATE.WORK },
+        { start: 17, end: 20, state: STATE.SOCIALIZE },
+        { start: 20, end: 6, state: STATE.SLEEP }
+      ]
+    },
+    potter: {
+      label: 'Potter',
+      schedule: [
+        { start: 7, end: 8, state: STATE.TRAVEL, target: 'work' },
+        { start: 8, end: 12, state: STATE.WORK },
+        { start: 12, end: 13, state: STATE.SOCIALIZE },
+        { start: 13, end: 18, state: STATE.WORK },
+        { start: 18, end: 21, state: STATE.IDLE },
+        { start: 21, end: 7, state: STATE.SLEEP }
+      ]
+    },
     healer: {
       label: 'Healer',
       schedule: [
@@ -140,7 +228,7 @@ Game.NPC = (function () {
   };
 
   var PERSONALITIES = ['brave', 'cowardly', 'friendly', 'hostile', 'greedy', 'honest', 'suspicious', 'calm'];
-  var SOCIAL_CLASSES = { king: 5, noble: 4, guard: 3, merchant: 3, blacksmith: 2, tavernKeeper: 2, healer: 2, farmer: 1, villager: 1, woodcutter: 1, hunter: 1, miner: 1, bandit: 0 };
+  var SOCIAL_CLASSES = { king: 5, noble: 4, guard: 3, merchant: 3, blacksmith: 2, tavernKeeper: 2, healer: 2, tailor: 2, baker: 2, butcher: 2, farmer: 1, villager: 1, woodcutter: 1, carpenter: 1, mason: 1, fisherman: 1, cooper: 1, potter: 1, hunter: 1, miner: 1, bandit: 0 };
   var LIFESTYLES = ['family', 'ambitious', 'devout', 'frugal', 'hedonist', 'outdoorsy', 'scholarly', 'community'];
   var RELATIONSHIP_TYPES = ['family', 'friend', 'rival', 'coworker', 'partner'];
 
@@ -233,6 +321,14 @@ Game.NPC = (function () {
       case 'bandit': return '#3a3a3a';
       case 'farmer': return '#6a5a3a';
       case 'woodcutter': return '#5a4a2a';
+      case 'carpenter': return '#7a5a2f';
+      case 'mason': return '#7a7a78';
+      case 'fisherman': return '#3f5f7a';
+      case 'baker': return '#8a6b3f';
+      case 'tailor': return '#6a3f7a';
+      case 'butcher': return '#7a3f3f';
+      case 'cooper': return '#6a4c2a';
+      case 'potter': return '#8a5b45';
       case 'healer': return '#2f7a6d';
       case 'hunter': return '#4a5f2c';
       case 'miner': return '#565656';
@@ -249,8 +345,10 @@ Game.NPC = (function () {
     if (job === 'king' || job === 'noble') return U.pick(['ambitious', 'devout', 'hedonist']);
     if (job === 'guard') return U.pick(['community', 'devout', 'family']);
     if (job === 'healer') return U.pick(['scholarly', 'community', 'devout']);
-    if (job === 'hunter' || job === 'woodcutter') return U.pick(['outdoorsy', 'frugal', 'family']);
-    if (job === 'merchant') return U.pick(['ambitious', 'frugal', 'community']);
+    if (job === 'hunter' || job === 'woodcutter' || job === 'fisherman') return U.pick(['outdoorsy', 'frugal', 'family']);
+    if (job === 'carpenter' || job === 'mason' || job === 'cooper') return U.pick(['family', 'frugal', 'community']);
+    if (job === 'merchant' || job === 'tailor' || job === 'baker') return U.pick(['ambitious', 'frugal', 'community']);
+    if (job === 'butcher' || job === 'potter') return U.pick(['community', 'frugal', 'family']);
     return U.pick(LIFESTYLES);
   }
 
@@ -383,6 +481,59 @@ Game.NPC = (function () {
       ]
     });
 
+    // Carpenter
+    createNPC({
+      name: { first: 'Edwin', last: 'Cale', full: 'Edwin Cale' },
+      job: 'carpenter', gender: 'male', age: 34,
+      x: 132 * TS, y: 126 * TS,
+      home: { x: 132 * TS, y: 131 * TS },
+      work: { x: 132 * TS, y: 126 * TS },
+      faction: 'civilian', personality: 'honest',
+      playerRelation: 2, location: 'ashford'
+    });
+
+    // Ashford specialist trades
+    createNPC({
+      name: { first: 'Vera', last: 'Needle', full: 'Vera Needle' },
+      job: 'tailor', gender: 'female', age: 31,
+      x: 120 * TS, y: 126 * TS,
+      home: { x: 120 * TS, y: 131 * TS },
+      work: { x: 120 * TS, y: 126 * TS },
+      faction: 'civilian', personality: 'calm', location: 'ashford'
+    });
+    createNPC({
+      name: { first: 'Brom', last: 'Malt', full: 'Brom Malt' },
+      job: 'baker', gender: 'male', age: 44,
+      x: 118 * TS, y: 129 * TS,
+      home: { x: 118 * TS, y: 133 * TS },
+      work: { x: 118 * TS, y: 129 * TS },
+      faction: 'civilian', personality: 'friendly', location: 'ashford'
+    });
+    createNPC({
+      name: { first: 'Hilda', last: 'Reeve', full: 'Hilda Reeve' },
+      job: 'butcher', gender: 'female', age: 39,
+      x: 126 * TS, y: 124 * TS,
+      home: { x: 126 * TS, y: 131 * TS },
+      work: { x: 126 * TS, y: 124 * TS },
+      faction: 'civilian', personality: 'honest', location: 'ashford'
+    });
+    createNPC({
+      name: { first: 'Tomas', last: 'Kiln', full: 'Tomas Kiln' },
+      job: 'potter', gender: 'male', age: 36,
+      x: 123 * TS, y: 132 * TS,
+      home: { x: 123 * TS, y: 137 * TS },
+      work: { x: 123 * TS, y: 132 * TS },
+      faction: 'civilian', personality: 'calm', location: 'ashford'
+    });
+    createNPC({
+      name: { first: 'Garrick', last: 'Stonehand', full: 'Garrick Stonehand' },
+      job: 'mason', gender: 'male', age: 42,
+      x: 140 * TS, y: 124 * TS,
+      home: { x: 140 * TS, y: 131 * TS },
+      work: { x: 140 * TS, y: 124 * TS },
+      faction: 'civilian', personality: 'brave', location: 'ashford'
+    });
+
     // Town merchants
     for (var i = 0; i < 3; i++) {
       createNPC({
@@ -462,6 +613,22 @@ Game.NPC = (function () {
       x: (mhx + 2) * TS, y: (mhy + 2) * TS,
       home: { x: (mhx + 1) * TS, y: (mhy + 5) * TS },
       work: { x: (mhx + 2) * TS, y: (mhy + 2) * TS },
+      faction: 'millhaven', location: 'millhaven', personality: 'friendly'
+    });
+    createNPC({
+      name: { first: 'Jory', last: 'Barrel', full: 'Jory Barrel' },
+      job: 'cooper', gender: 'male', age: 40,
+      x: (mhx + 4) * TS, y: (mhy + 3) * TS,
+      home: { x: (mhx + 3) * TS, y: (mhy + 6) * TS },
+      work: { x: (mhx + 4) * TS, y: (mhy + 3) * TS },
+      faction: 'millhaven', location: 'millhaven', personality: 'honest'
+    });
+    createNPC({
+      name: { first: 'Mira', last: 'Reed', full: 'Mira Reed' },
+      job: 'fisherman', gender: 'female', age: 28,
+      x: (mhx - 1) * TS, y: (mhy + 1) * TS,
+      home: { x: (mhx - 2) * TS, y: (mhy + 4) * TS },
+      work: { x: 63 * TS, y: 184 * TS },
       faction: 'millhaven', location: 'millhaven', personality: 'friendly'
     });
     for (var i = 0; i < 2; i++) {
@@ -917,6 +1084,14 @@ Game.NPC = (function () {
         if (npc.job === 'guard') greeting = 'Halt. State your business here.';
         else if (npc.job === 'merchant') greeting = 'A customer? Come, have a look!';
         else if (npc.job === 'tavernKeeper') greeting = 'Welcome, traveler. Hungry?';
+        else if (npc.job === 'carpenter') greeting = 'Mind the shavings - I am shaping beams.';
+        else if (npc.job === 'mason') greeting = 'Watch your step, stone dust everywhere.';
+        else if (npc.job === 'fisherman') greeting = 'Tide waits for no one.';
+        else if (npc.job === 'baker') greeting = 'Fresh loaves are nearly ready.';
+        else if (npc.job === 'tailor') greeting = 'Stand still and I can size you up.';
+        else if (npc.job === 'butcher') greeting = 'Best cuts in town, if you have coin.';
+        else if (npc.job === 'cooper') greeting = 'A leaky barrel is wasted ale.';
+        else if (npc.job === 'potter') greeting = 'Clay tells you what it wants to become.';
       }
 
       setBark(npc, greeting);
@@ -1232,6 +1407,14 @@ Game.NPC = (function () {
       case 'merchant': return ['Best prices in town!', 'Come, see my wares!', 'Fair deals here!', 'Quality goods!'];
       case 'tavernKeeper': return ['What can I get you?', 'Ale is fresh today.', 'Welcome, friend.', 'Take a seat.'];
       case 'woodcutter': return ['Timber!', 'Good oak here.', 'One more tree...', 'These woods are deep.'];
+      case 'carpenter': return ['Measure twice, cut once.', 'This join needs a tighter fit.', '*scrape scrape*', 'A sturdy beam starts with straight grain.'];
+      case 'mason': return ['Stone on stone.', 'Keep the line true.', '*tap tap*', 'This mortar should set by dusk.'];
+      case 'fisherman': return ['Nets up!', 'Good catch today.', 'Mind the hooks.', 'River is generous this morning.'];
+      case 'baker': return ['Need more flour.', 'These loaves are rising well.', 'Oven heat is perfect.', 'Bread for the whole square.'];
+      case 'tailor': return ['Fine stitching takes patience.', 'Hold still for measurements.', '*snip snip*', 'This seam needs reinforcing.'];
+      case 'butcher': return ['Sharp blade, clean cut.', 'Nothing goes to waste.', 'Order for the tavern next.', 'Need fresh salt for curing.'];
+      case 'cooper': return ['Hoop it tight.', 'This barrel must not leak.', '*thunk thunk*', 'Good oak staves, good barrel.'];
+      case 'potter': return ['Steady hands at the wheel.', 'This clay is too wet.', 'Kiln is almost ready.', 'That glaze should shine.'];
       default: return ['...', 'Hmm.', '*sigh*', 'What a day.'];
     }
   }
