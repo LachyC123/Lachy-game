@@ -291,6 +291,11 @@ Game.World = (function () {
     placeBuilding(cx + 3, cy + 3, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
     placeBuilding(cx - 3, cy - 7, 4, 3, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
 
+    // Additional homes so each villager can visibly belong to a proper dwelling
+    placeBuilding(cx - 11, cy - 1, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
+    placeBuilding(cx + 7, cy - 1, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
+    placeBuilding(cx - 2, cy + 8, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'house');
+
     if (settlement.name === 'Millhaven') {
       placeBuilding(cx + 4, cy - 1, 5, 4, T.WALL_WOOD, T.WOOD_FLOOR, 'shop');
       locations.millhavenShop = { x: cx + 6, y: cy + 1, name: 'Millhaven Shop' };
