@@ -362,7 +362,7 @@ Game.UI = (function () {
     ctx.fillStyle = '#d4a030';
     ctx.textAlign = 'left';
     if (npc) {
-      var jobLabel = Game.NPC.getJobLabel ? Game.NPC.getJobLabel(npc.job) : Game.Utils.formatJobLabel(npc.job);
+      var jobLabel = Game.Utils.formatJobLabel(npc.job);
       ctx.fillText(npc.name.full + ' (' + jobLabel + ')', dX + 15, dY + 22);
     }
 

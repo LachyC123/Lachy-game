@@ -188,15 +188,9 @@ Game.Dialogue = (function () {
     Game.Player.gainSkill('speech', 0.04);
     rebuildWithBack();
   }
-
-  function getDisplayJobLabel(job) {
-    if (Game.NPC && typeof Game.NPC.getJobLabel === 'function') return Game.NPC.getJobLabel(job);
-    return U.formatJobLabel(job);
-  }
-
   function respondJob() {
     var npc = currentNPC;
-    var jobLabel = getDisplayJobLabel(npc.job);
+    var jobLabel = U.formatJobLabel(npc.job);
     dialogueText = 'I work as a ' + jobLabel.toLowerCase() + '. It is honest work, and it keeps food on the table.';
     if (npc.job === 'guard') dialogueText = 'I serve as a guard. We keep Ashford safe and the peace intact.';
     if (npc.job === 'bandit') dialogueText = 'Work? We take what we need. The road is our trade.';
