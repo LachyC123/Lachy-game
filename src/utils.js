@@ -131,6 +131,12 @@ Game.Utils = (function () {
     return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
   }
 
+
+  function formatJobLabel(job) {
+    if (job === 'tavernKeeper') return 'Tavern Keeper';
+    return job ? job.charAt(0).toUpperCase() + job.slice(1) : 'Commoner';
+  }
+
   // Simple spatial hash
   function SpatialHash(cellSize) {
     this.cellSize = cellSize;
@@ -208,6 +214,7 @@ Game.Utils = (function () {
     randInt: randInt, randFloat: randFloat, pick: pick, shuffle: shuffle,
     generateName: generateName, resetNames: resetNames,
     colorLerp: colorLerp, colorStr: colorStr, hexToRgb: hexToRgb,
+    formatJobLabel: formatJobLabel,
     SpatialHash: SpatialHash, DIR: DIR, dirFromAngle: dirFromAngle,
     bresenhamLine: bresenhamLine
   };

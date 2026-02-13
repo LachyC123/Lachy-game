@@ -191,8 +191,7 @@ Game.Dialogue = (function () {
 
   function getDisplayJobLabel(job) {
     if (Game.NPC && typeof Game.NPC.getJobLabel === 'function') return Game.NPC.getJobLabel(job);
-    if (job === 'tavernKeeper') return 'Tavern Keeper';
-    return job ? job.charAt(0).toUpperCase() + job.slice(1) : 'Commoner';
+    return U.formatJobLabel(job);
   }
 
   function respondJob() {
