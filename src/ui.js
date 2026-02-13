@@ -505,10 +505,16 @@ Game.UI = (function () {
       if (Game.Input.isAction('invItem' + i)) {
         Game.Input.consumeAction('invItem' + i);
         var item = p.inventory[i];
-        if (item.healAmount && item.type === 'food' || item.type === 'healing') {
-          Game.Player.heal(item.healAmount);
-          Game.Player.removeItem(item.id, 1);
-          showNotification('Used ' + item.name + '. +' + item.healAmount + ' health.');
+        if ((item.type === 'food' || item.type === 'healing') && item.healAmount > 0) {
+          var missingHealth = p.maxHealth - p.health;
+          if (missingHealth <= 0) {
+            showNotification('You are already at full health.');
+          } else {
+            var healed = Math.min(item.healAmount, Math.ceil(missingHealth));
+            Game.Player.heal(item.healAmount);
+            Game.Player.removeItem(item.id, 1);
+            showNotification('Used ' + item.name + '. +' + healed + ' health.');
+          }
         } else if (item.type === 'weapon') {
           p.equipped.weapon = item;
           showNotification('Equipped ' + item.name + '.');
