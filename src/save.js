@@ -20,7 +20,7 @@ Game.Save = (function () {
   function save(isAuto) {
     try {
       var data = {
-        version: 1,
+        version: 2,
         timestamp: Date.now(),
         isAuto: !!isAuto,
         time: Game.time || 0,
@@ -28,7 +28,8 @@ Game.Save = (function () {
         player: Game.Player.getState(),
         npcs: Game.NPC.getSerializable(),
         law: Game.Law.getSerializable(),
-        economy: Game.Economy.getSerializable()
+        economy: Game.Economy.getSerializable(),
+        needs: Game.Needs ? Game.Needs.getState() : null
       };
 
       // Clean player state for serialization
@@ -53,7 +54,9 @@ Game.Save = (function () {
       pClean.bounty = ps.bounty;
       pClean.killCount = ps.killCount;
       pClean.daysAlive = ps.daysAlive;
-      pClean.bleeding = ps.bleeding;
+      pClean.bleeding  = ps.bleeding;
+      pClean.wounds    = ps.wounds || [];
+      pClean.maxStamina = ps.maxStamina || 100;
       data.player = pClean;
 
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -76,8 +79,8 @@ Game.Save = (function () {
         return false;
       }
       var data = JSON.parse(raw);
-      if (!data || data.version !== 1) {
-        Game.UI.showNotification('Incompatible save.');
+      if (!data || (data.version !== 1 && data.version !== 2)) {
+        Game.UI.showNotification('Incompatible save data. Starting fresh.', 'warning');
         return false;
       }
 
@@ -101,7 +104,9 @@ Game.Save = (function () {
       ps.bounty = pd.bounty || 0;
       ps.killCount = pd.killCount || 0;
       ps.daysAlive = pd.daysAlive || 0;
-      ps.bleeding = pd.bleeding || 0;
+      ps.bleeding   = pd.bleeding   || 0;
+      ps.wounds     = pd.wounds     || [];
+      ps.maxStamina = pd.maxStamina || 100;
       if (pd.inventory) ps.inventory = pd.inventory;
 
       // Re-equip
@@ -135,7 +140,10 @@ Game.Save = (function () {
       // Restore economy
       if (data.economy) Game.Economy.loadState(data.economy);
 
-      Game.UI.showNotification('Game loaded.');
+      // Restore needs
+      if (data.needs && Game.Needs) Game.Needs.setState(data.needs);
+
+      Game.UI.showNotification('Game loaded.', 'success');
       return true;
     } catch (e) {
       console.error('Load failed:', e);

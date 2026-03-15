@@ -10,12 +10,14 @@ Game.TIME_SCALE = 2; // game minutes per real second
 
 Game.onNewDay = function () {
   var p = Game.Player.getState();
-  var summary = 'Day ' + Game.day + ': a new dawn over the frontier.';
+  var summary = 'Day ' + Game.day + ': a new dawn.';
 
-  // Passive recovery for surviving the night
-  p.health = Math.min(p.maxHealth, p.health + 8);
-  p.stamina = Math.min(p.maxStamina, p.stamina + 15);
-  p.bleeding = Math.max(0, p.bleeding - 1.5);
+  // Passive recovery depends on fatigue/sleep
+  var ns = Game.Needs ? Game.Needs.getState() : { fatigue: 50 };
+  var restQuality = Math.max(0, 1 - ns.fatigue / 100);
+  p.health = Math.min(p.maxHealth, p.health + Math.round(5 + restQuality * 10));
+  p.stamina = Math.min(p.maxStamina, p.stamina + Math.round(10 + restQuality * 15));
+  p.bleeding = Math.max(0, p.bleeding - 1.0);
 
   // Economy and world news pulse
   Game.Economy.updateFluctuation();
@@ -60,16 +62,40 @@ Game.Main = (function () {
       return;
     }
 
-    // Show loading
+    // Show cinematic loading screen
     var ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    ctx.fillStyle = '#1a1510';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#a08050';
-    ctx.font = '16px sans-serif';
+    var W = canvas.width, H = canvas.height;
+
+    // Dark background
+    ctx.fillStyle = '#100c06';
+    ctx.fillRect(0, 0, W, H);
+
+    // Radial glow center
+    var grd = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.min(W,H)*0.5);
+    grd.addColorStop(0, 'rgba(80,50,10,0.4)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, W, H);
+
+    // Title
+    ctx.font = 'bold 32px serif';
+    ctx.fillStyle = '#c8a840';
     ctx.textAlign = 'center';
-    ctx.fillText('Generating world...', canvas.width / 2, canvas.height / 2);
+    ctx.fillText('ASHFORD', W/2, H/2 - 40);
+    ctx.font = '16px serif';
+    ctx.fillStyle = '#806030';
+    ctx.fillText('Frontier Kingdom', W/2, H/2 - 10);
+
+    // Divider
+    ctx.strokeStyle = 'rgba(160,120,40,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(W/2-100, H/2+12); ctx.lineTo(W/2+100, H/2+12); ctx.stroke();
+
+    // Loading text
+    ctx.font = '13px serif';
+    ctx.fillStyle = '#907050';
+    ctx.fillText('Generating the frontier...', W/2, H/2 + 38);
 
     // Use setTimeout to allow the loading screen to render
     setTimeout(function () {
@@ -82,6 +108,7 @@ Game.Main = (function () {
     Game.World.init(42);
     Game.Economy.init();
     Game.Ambient.init();
+    Game.Needs.init();
     Game.Player.init();
     Game.NPC.init();
     Game.Combat.init();
@@ -91,6 +118,7 @@ Game.Main = (function () {
     Game.Input.init();
     Game.Renderer.init(canvas);
     Game.UI.init(canvas);
+    Game.Minigames.init(canvas);
 
     // Try to load save
     if (Game.Save.hasSave()) {
@@ -113,7 +141,15 @@ Game.Main = (function () {
     // Prevent context menu
     document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
-    Game.UI.showNotification('Welcome to the frontier. You are a nobody. Make your mark.');
+    setTimeout(function () {
+      Game.UI.showNotification('Welcome to Ashford. You are a nobody — make your mark.', 'info');
+    }, 500);
+    setTimeout(function () {
+      Game.UI.showNotification('F key or hold E to forage herbs in the forest.', 'info');
+    }, 3000);
+    setTimeout(function () {
+      Game.UI.showNotification('Eat, drink, and sleep to keep your strength.', 'warning');
+    }, 5500);
   }
 
   function gameLoop(timestamp) {
@@ -147,12 +183,15 @@ Game.Main = (function () {
     }
 
     // Update systems
-    var blocking = Game.UI.isBlockingInput();
+    var blocking = Game.UI.isBlockingInput() || (Game.Minigames && Game.Minigames.isActive());
 
     if (!blocking) {
+      Game.Needs.update(dt);
       Game.Player.update(dt);
       Game.Combat.update(dt);
     }
+
+    if (Game.Minigames) Game.Minigames.update(dt);
 
     Game.NPC.update(dt);
     Game.Law.update(dt);
@@ -166,6 +205,7 @@ Game.Main = (function () {
     Game.Renderer.updateCamera(dt);
     Game.Renderer.render();
     Game.UI.render();
+    if (Game.Minigames) Game.Minigames.render();
   }
 
   return { init: init };
