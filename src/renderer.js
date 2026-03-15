@@ -513,6 +513,12 @@ Game.Renderer = (function () {
 
     if (npc.state === 'sleep') ctx.globalAlpha = 0.55;
 
+    // Hit flash: briefly draw white overlay
+    if (npc.hitFlashTimer > 0) {
+      npc.hitFlashTimer -= 0.016; // approximate dt
+      ctx.globalAlpha = Math.min(0.7, npc.hitFlashTimer * 6);
+    }
+
     // Shadow
     ctx.fillStyle = 'rgba(0,0,0,0.16)';
     ctx.beginPath();

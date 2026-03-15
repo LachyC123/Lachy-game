@@ -182,12 +182,6 @@ Game.Player = (function () {
       }
     }
 
-    // Foraging with E key in forests
-    if (Game.Input.isAction('forage') && player.forageCooldown <= 0) {
-      Game.Input.consumeAction('forage');
-      tryForage();
-    }
-
     // Drinking waterskin from inventory (quick-use Q key)
     if (Game.Input.isKeyDown('KeyQ')) {
       Game.Input.clearKey('KeyQ');

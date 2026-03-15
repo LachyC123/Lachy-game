@@ -100,7 +100,12 @@ Game.UI = (function () {
     // Forage button
     if (Game.Input.isAction('forage')) {
       Game.Input.consumeAction('forage');
-      if (Game.Player && Game.Player.tryForage) Game.Player.tryForage();
+      var ps2 = Game.Player ? Game.Player.getState() : null;
+      if (Game.Player && Game.Player.tryForage && ps2 && ps2.forageCooldown <= 0) {
+        Game.Player.tryForage();
+      } else if (ps2 && ps2.forageCooldown > 0) {
+        showNotification('Forage cooldown: ' + Math.ceil(ps2.forageCooldown) + 's', 'info');
+      }
     }
 
     // Inventory toggle
@@ -164,6 +169,9 @@ Game.UI = (function () {
 
     // Notifications
     renderNotifications();
+
+    // Key hints
+    renderKeybinds(Game._lastDt || 0.016);
 
     // Debug overlay
     if (showDebug) {
@@ -695,16 +703,32 @@ Game.UI = (function () {
         var item = p.inventory[i];
         if ((item.type === 'food' || item.type === 'healing' || item.type === 'potion') && item.healAmount) {
           Game.Player.heal(item.healAmount);
-          if (Game.Needs && item.satiation) Game.Needs.eat(item);
+          if (Game.Needs && (item.satiation || item.hydration)) Game.Needs.eat(item);
+          // Potion special effects
+          if (item.stopsBleeding) {
+            p.bleeding = 0;
+            showNotification('Bleeding stopped!', 'success');
+          }
+          if (item.clearsWounds) {
+            p.wounds = [];
+            showNotification('Wounds cleared!', 'success');
+          }
+          if (item.restoresFatigue && Game.Needs) {
+            Game.Needs.sleep(item.restoresFatigue / 14);
+            showNotification('Fatigue reduced.', 'success');
+          }
           Game.Player.removeItem(item.id, 1);
           showNotification('Used ' + item.name + '. +' + item.healAmount + ' HP.', 'success');
           if (Game.Renderer) {
-            Game.Renderer.spawnParticle(p.x, p.y - 15, 'heal');
+            for (var hi = 0; hi < 5; hi++) Game.Renderer.spawnParticle(p.x + (Math.random()-0.5)*12, p.y - 15 - hi*5, 'heal');
           }
         } else if (item.type === 'food' && item.satiation) {
           if (Game.Needs) Game.Needs.eat(item);
           Game.Player.removeItem(item.id, 1);
           showNotification('Ate ' + item.name + '.', 'success');
+        } else if (item.type === 'drink') {
+          if (Game.Needs) Game.Needs.drink(item.hydration || 30, item.name);
+          Game.Player.removeItem(item.id, 1);
         } else if (item.type === 'weapon') {
           p.equipped.weapon = item;
           showNotification('Equipped ' + item.name + '.', 'info');
@@ -759,6 +783,38 @@ Game.UI = (function () {
       ctx.fillText(n.text, nx + nw / 2 + slideOffset, ny + nh / 2 + 5);
     }
     ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  var keybindsVisible = true;
+  var keybindsTimer = 12; // show for 12 seconds at start
+
+  function renderKeybinds(dt) {
+    if (!keybindsVisible || keybindsTimer <= 0) return;
+    keybindsTimer -= (dt || 0.016);
+
+    var alpha = Math.min(1, keybindsTimer * 0.5);
+    if (alpha <= 0) { keybindsVisible = false; return; }
+
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.75;
+    var hints = [
+      'WASD / Arrows: Move',
+      'J: Light Attack    K: Heavy Attack',
+      'L (hold): Block    Space/Shift: Dodge',
+      'E: Interact    F: Forage (in forest)',
+      'Q: Quick drink    I: Inventory',
+      'F5: Save    F9: Load    F3: Debug'
+    ];
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    var hx = 15, hy = H - 145;
+    ctx.fillStyle = 'rgba(5,3,2,0.7)';
+    roundRect(ctx, hx - 6, hy - 14, 240, hints.length * 14 + 10, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(180,160,110,0.9)';
+    for (var i = 0; i < hints.length; i++) {
+      ctx.fillText(hints[i], hx, hy + i * 14);
+    }
     ctx.restore();
   }
 

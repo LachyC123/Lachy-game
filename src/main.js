@@ -122,7 +122,10 @@ Game.Main = (function () {
 
     // Try to load save
     if (Game.Save.hasSave()) {
-      // Don't auto-load, let player decide
+      // Show prompt after a brief delay
+      setTimeout(function () {
+        if (Game.UI) Game.UI.showNotification('Previous save found. Press F9 or S button to load.', 'info');
+      }, 1200);
     }
 
     Game.initialized = true;
@@ -161,6 +164,7 @@ Game.Main = (function () {
     // Cap dt to prevent large jumps
     if (dt > 0.1) dt = 0.1;
     if (dt <= 0) return;
+    Game._lastDt = dt;
 
     // FPS counter
     fpsFrames++;

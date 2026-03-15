@@ -1550,6 +1550,17 @@ Game.NPC = (function () {
       npc.bleeding += 2;
     }
 
+    // Hit flash on NPC (mark for renderer)
+    npc.hitFlashTimer = 0.12;
+
+    // Blood particle spray
+    if (Game.Renderer && actual > 4) {
+      var cnt = Math.min(8, Math.floor(actual / 4));
+      for (var bi = 0; bi < cnt; bi++) {
+        Game.Renderer.spawnParticle(npc.x + (Math.random()-0.5)*8, npc.y - 8, 'blood');
+      }
+    }
+
     if (npc.health <= 0) {
       npc.health = 0;
       npc.alive = false;
