@@ -467,58 +467,95 @@ Game.UI = (function () {
 
   function renderDialogue() {
     ctx.save();
-    var dW = Math.min(W - 30, 400);
-    var dH = Math.min(H * 0.45, 320);
+    var isArrest = Game.Dialogue.isArrestMode && Game.Dialogue.isArrestMode();
+    var dW = Math.min(W - 30, 420);
+    var dH = Math.min(H * 0.5, 360);
     var dX = (W - dW) / 2;
     var dY = H - dH - 50;
 
-    // Background
-    ctx.fillStyle = 'rgba(30,25,18,0.92)';
+    // Background - red tint in arrest mode
+    ctx.fillStyle = isArrest ? 'rgba(40,10,8,0.95)' : 'rgba(30,25,18,0.92)';
     roundRect(ctx, dX, dY, dW, dH, 8);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(160,140,100,0.6)';
-    ctx.lineWidth = 2;
+
+    // Border - red in arrest mode, pulsing slightly
+    ctx.strokeStyle = isArrest ? 'rgba(200,50,30,0.9)' : 'rgba(160,140,100,0.6)';
+    ctx.lineWidth = isArrest ? 3 : 2;
     roundRect(ctx, dX, dY, dW, dH, 8);
     ctx.stroke();
+
+    // Arrest mode top bar
+    if (isArrest) {
+      ctx.fillStyle = 'rgba(160,30,20,0.8)';
+      ctx.fillRect(dX, dY, dW, 26);
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillStyle = '#ffdddd';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚖  ARREST DEMAND  ⚖', dX + dW / 2, dY + 17);
+      ctx.textAlign = 'left';
+    }
 
     var npc = Game.Dialogue.getCurrentNPC();
     var text = Game.Dialogue.getText();
     var options = Game.Dialogue.getOptions();
+    var topOffset = isArrest ? 32 : 0;
 
     // NPC name
     ctx.font = 'bold 13px sans-serif';
-    ctx.fillStyle = '#d4a030';
+    ctx.fillStyle = isArrest ? '#ff8870' : '#d4a030';
     ctx.textAlign = 'left';
     if (npc) {
       var jobLabel = Game.NPC.getJobLabel ? Game.NPC.getJobLabel(npc.job) : (npc.job === 'tavernKeeper' ? 'Tavern Keeper' : npc.job.charAt(0).toUpperCase() + npc.job.slice(1));
-      ctx.fillText(npc.name.full + ' (' + jobLabel + ')', dX + 15, dY + 22);
+      var nameStr = npc.name.full + ' (' + jobLabel + ')';
+      // Show emotion icon
+      if (npc.emotion === 'scared') nameStr += ' [Frightened]';
+      else if (npc.emotion === 'angry') nameStr += ' [Angry]';
+      ctx.fillText(nameStr, dX + 15, dY + topOffset + 22);
     }
 
-    // Dialogue text
+    // Dialogue text with wrap
     ctx.font = '12px sans-serif';
-    ctx.fillStyle = '#e8dcc8';
+    ctx.fillStyle = isArrest ? '#ffcccc' : '#e8dcc8';
     var lines = wrapText(ctx, text, dW - 30);
     for (var i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], dX + 15, dY + 42 + i * 16);
+      ctx.fillText(lines[i], dX + 15, dY + topOffset + 42 + i * 16);
     }
 
     // Options
-    var optY = dY + 42 + lines.length * 16 + 15;
+    var optY = dY + topOffset + 42 + lines.length * 16 + 12;
     ctx.font = '12px sans-serif';
     for (var i = 0; i < options.length; i++) {
+      var opt = options[i];
       var oy = optY + i * 28;
-      if (oy + 24 > dY + dH) break; // overflow protection
+      if (oy + 24 > dY + dH) break;
 
-      // Option button
-      ctx.fillStyle = 'rgba(80,70,50,0.6)';
+      // Option styling based on type
+      var isSurrender = opt.action === 'surrender';
+      var isResist = opt.action === 'resistArrest';
+      var isBribe = opt.action === 'bribe' || opt.action === 'lieAboutCrime';
+      var isDisabled = opt.disabled;
+
+      if (isDisabled) {
+        ctx.fillStyle = 'rgba(50,45,40,0.4)';
+      } else if (isSurrender) {
+        ctx.fillStyle = 'rgba(30,80,30,0.7)';
+      } else if (isResist) {
+        ctx.fillStyle = 'rgba(100,20,15,0.7)';
+      } else if (isBribe) {
+        ctx.fillStyle = 'rgba(80,60,20,0.7)';
+      } else {
+        ctx.fillStyle = 'rgba(80,70,50,0.6)';
+      }
+
       roundRect(ctx, dX + 10, oy, dW - 20, 24, 4);
       ctx.fill();
 
-      ctx.fillStyle = '#e8dcc8';
-      ctx.fillText((i + 1) + '. ' + options[i].text, dX + 18, oy + 16);
+      ctx.fillStyle = isDisabled ? '#887766' : (isSurrender ? '#aaffaa' : (isResist ? '#ffaaaa' : (isBribe ? '#ffddaa' : '#e8dcc8')));
+      ctx.fillText((i + 1) + '. ' + opt.text, dX + 18, oy + 16);
 
-      // Register as touch target
-      Game.Input.registerButton('dialogOpt' + i, dX + 10, oy, dW - 20, 24);
+      if (!isDisabled) {
+        Game.Input.registerButton('dialogOpt' + i, dX + 10, oy, dW - 20, 24);
+      }
     }
 
     // Handle dialogue option selection via touch

@@ -801,15 +801,62 @@ Game.Renderer = (function () {
       ctx.fillRect(sx - 12, bodyY - 22, Math.round(24 * hpPct), 3);
     }
 
-    // Combat indicator
+    // State indicators
     if (npc.state === 'fight') {
-      ctx.strokeStyle = 'rgba(180,40,40,0.5)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(200,40,40,0.7)';
+      ctx.lineWidth = 1.5;
       ctx.setLineDash([2, 2]);
       ctx.beginPath();
       ctx.arc(sx, bodyY - 4, 14, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
+    } else if (npc.state === 'warn') {
+      // Guard warning - orange pulsing ring
+      var warnPulse = 0.4 + 0.3 * Math.sin(animTime * 4);
+      ctx.strokeStyle = 'rgba(220,140,30,' + warnPulse + ')';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(sx, bodyY - 4, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (npc.state === 'pursue') {
+      // Active pursuit - fast red dashes
+      ctx.strokeStyle = 'rgba(220,60,20,0.8)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 2]);
+      ctx.beginPath();
+      ctx.arc(sx, bodyY - 4, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (npc.state === 'scared') {
+      // Scared - blue trembling dots around NPC
+      ctx.fillStyle = 'rgba(100,140,220,0.5)';
+      for (var di = 0; di < 4; di++) {
+        var da = (animTime * 3 + di * Math.PI / 2);
+        var dr = 10 + Math.sin(animTime * 8 + di) * 2;
+        ctx.beginPath();
+        ctx.arc(sx + Math.cos(da) * dr, bodyY - 4 + Math.sin(da) * dr, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (npc.state === 'mourn') {
+      // Mourning - dark ripple
+      var mourPulse = 0.3 + 0.2 * Math.sin(animTime * 2);
+      ctx.strokeStyle = 'rgba(80,60,100,' + mourPulse + ')';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(sx, bodyY - 4, 12 + Math.sin(animTime * 2) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Emotion visual modifier on face/body color
+    if (npc.emotion === 'scared' && npc.emotionIntensity > 0.3) {
+      // Slight blue tint via overlay
+      ctx.fillStyle = 'rgba(80,120,200,' + (npc.emotionIntensity * 0.15) + ')';
+      ctx.fillRect(sx - 8, bodyY - 16, 16, 20);
+    } else if (npc.emotion === 'angry' && npc.emotionIntensity > 0.3) {
+      ctx.fillStyle = 'rgba(200,60,40,' + (npc.emotionIntensity * 0.15) + ')';
+      ctx.fillRect(sx - 8, bodyY - 16, 16, 20);
     }
 
     // Bleeding
