@@ -461,9 +461,9 @@ Game.NPC = (function () {
       faction: 'civilian', personality: 'friendly',
       playerRelation: 5, location: 'ashford',
       inventory: [
-        { id: 'ale', name: 'Ale', type: 'food', value: 3, healAmount: 5 },
-        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 },
-        { id: 'stew', name: 'Hearty Stew', type: 'food', value: 5, healAmount: 20 }
+        { id: 'ale', name: 'Ale', type: 'food', value: 3, healAmount: 5, satiation: 8, hydration: 20 },
+        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8, satiation: 22, hydration: 5 },
+        { id: 'stew', name: 'Hearty Stew', type: 'food', value: 5, healAmount: 20, satiation: 35, hydration: 10 }
       ]
     });
 
@@ -551,7 +551,7 @@ Game.NPC = (function () {
           { id: 'grain', name: 'Sack of Grain', type: 'trade', value: 8 },
           { id: 'tools', name: 'Iron Tools', type: 'trade', value: 15 },
           { id: 'cloth', name: 'Bolt of Cloth', type: 'trade', value: 12 },
-          { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 }
+          { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8, satiation: 22, hydration: 5 }
         ]
       });
     }
@@ -603,7 +603,7 @@ Game.NPC = (function () {
       faction: 'millhaven', personality: 'friendly',
       playerRelation: 5, location: 'millhaven',
       inventory: [
-        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 },
+        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8, satiation: 22, hydration: 5 },
         { id: 'grain', name: 'Sack of Grain', type: 'trade', value: 8 },
         { id: 'knife', name: 'Hunting Knife', type: 'weapon', damage: 8, speed: 1.2, value: 10 },
         { id: 'bandage', name: 'Linen Bandage', type: 'healing', value: 5, healAmount: 30 }
@@ -701,7 +701,7 @@ Game.NPC = (function () {
       work: { x: (tfx + 6) * TS, y: (tfy + 1) * TS },
       faction: 'thornfield', location: 'thornfield',
       inventory: [
-        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 },
+        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8, satiation: 22, hydration: 5 },
         { id: 'wood', name: 'Bundle of Wood', type: 'trade', value: 5 },
         { id: 'hatchet', name: 'Hatchet', type: 'weapon', damage: 10, speed: 1.0, value: 15 }
       ]
@@ -745,8 +745,8 @@ Game.NPC = (function () {
       faction: 'civilian', personality: 'friendly',
       speed: 55, playerRelation: 0, location: 'wilderness',
       inventory: [
-        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 },
-        { id: 'wine', name: 'Wine', type: 'food', value: 8, healAmount: 15 },
+        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8, satiation: 22, hydration: 5 },
+        { id: 'wine', name: 'Wine', type: 'food', value: 8, healAmount: 15, satiation: 10, hydration: 15 },
         { id: 'cloth', name: 'Fine Cloth', type: 'trade', value: 18 },
         { id: 'spice', name: 'Spices', type: 'trade', value: 25 }
       ]
@@ -761,9 +761,9 @@ Game.NPC = (function () {
       speed: 50, playerRelation: 0, location: 'wilderness',
       inventory: [
         { id: 'wood', name: 'Bundle of Wood', type: 'trade', value: 5 },
-        { id: 'herbs', name: 'Healing Herbs', type: 'healing', value: 8, healAmount: 25 },
+        { id: 'herbs', name: 'Healing Herbs', type: 'healing', value: 8, healAmount: 25, stopsBleeding: true },
         { id: 'pelts', name: 'Animal Pelts', type: 'trade', value: 15 },
-        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8 }
+        { id: 'bread', name: 'Bread', type: 'food', value: 2, healAmount: 8, satiation: 22, hydration: 5 }
       ]
     });
   }
