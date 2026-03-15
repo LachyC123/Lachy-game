@@ -43,11 +43,21 @@ Game.Ambient = (function () {
     clouds = [];
     events = [];
     worldNews = [
-      'The harvest was poor this season.',
-      'A merchant caravan arrived from the east.',
-      'The King has raised taxes again.',
-      'Wolves were spotted near the northern road.',
-      'A barn caught fire in the fields last week.',
+      'The harvest was poor this season. Food prices have risen.',
+      'A merchant caravan arrived from the east with exotic spices.',
+      'The King has raised taxes again. The peasants grumble.',
+      'Wolves were spotted near the northern road. Travelers warned.',
+      'A barn caught fire in the fields last week. Arson suspected.',
+      'Yarrow grows thick in the eastern forest. Healers are pleased.',
+      'The healer in Ashford is short on herbs. Good time to forage.',
+      'A wandering knight was seen camping near the river at dusk.',
+      'The blacksmith prices have gone up. Raw iron is scarce.',
+      'Someone picked the lock of the market storeroom. Nothing was taken.',
+      'The mill wheel broke last week. Grain is backing up.',
+      'A strange illness spreads through Millhaven. Chamomile is in demand.',
+      'The tavernkeeper raised the price of ale. Hard times for some.',
+      'Bandits robbed a peddler on the east road. Guards were too slow.',
+      'Wild boar have been spotted near Thornfield. Good hunting.',
       'The blacksmith forged a fine new blade.',
       'Trade with the south has slowed.',
       'The river is running higher than usual.'

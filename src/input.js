@@ -180,15 +180,16 @@ Game.Input = (function () {
 
   function isAction(name) {
     // Keyboard mappings
-    if (name === 'attack' && keys['KeyJ']) return true;
-    if (name === 'heavyAttack' && keys['KeyK']) return true;
-    if (name === 'block' && keys['KeyL']) return true;
-    if (name === 'dodge' && (keys['Space'] || keys['ShiftLeft'])) return true;
-    if (name === 'interact' && keys['KeyE']) return true;
-    if (name === 'inventory' && keys['KeyI']) return true;
-    if (name === 'save' && keys['F5']) return true;
-    if (name === 'load' && keys['F9']) return true;
-    if (name === 'debug' && keys['F3']) return true;
+    if (name === 'attack'      && keys['KeyJ'])                      return true;
+    if (name === 'heavyAttack' && keys['KeyK'])                      return true;
+    if (name === 'block'       && keys['KeyL'])                      return true;
+    if (name === 'dodge'       && (keys['Space'] || keys['ShiftLeft'])) return true;
+    if (name === 'interact'    && keys['KeyE'])                      return true;
+    if (name === 'forage'      && keys['KeyF'])                      return true;
+    if (name === 'inventory'   && keys['KeyI'])                      return true;
+    if (name === 'save'        && keys['F5'])                        return true;
+    if (name === 'load'        && keys['F9'])                        return true;
+    if (name === 'debug'       && keys['F3'])                        return true;
 
     // Touch buttons
     if (buttons[name] || buttonTimers[name] > 0) return true;
@@ -198,15 +199,17 @@ Game.Input = (function () {
   function consumeAction(name) {
     buttons[name] = false;
     buttonTimers[name] = 0;
-    // Only clear the specific key mapping for this action
     var keyMap = {
       attack: 'KeyJ', heavyAttack: 'KeyK', block: 'KeyL',
-      dodge: 'Space', interact: 'KeyE', inventory: 'KeyI',
-      save: 'F5', load: 'F9', debug: 'F3'
+      dodge: 'Space', interact: 'KeyE', forage: 'KeyF',
+      inventory: 'KeyI', save: 'F5', load: 'F9', debug: 'F3'
     };
     if (keyMap[name]) keys[keyMap[name]] = false;
     if (name === 'dodge') keys['ShiftLeft'] = false;
   }
+
+  // Expose raw key state for minigames
+  function getRaw() { return keys; }
 
   function update() {
     // Decay button timers
@@ -239,6 +242,7 @@ Game.Input = (function () {
     getMovement: getMovement, isAction: isAction, consumeAction: consumeAction,
     getJoystickState: getJoystickState,
     registerButton: registerButton, clearButtons: clearButtons,
-    isKeyDown: isKeyDown, clearKey: clearKey, getTap: getTap
+    isKeyDown: isKeyDown, clearKey: clearKey, getTap: getTap,
+    getRaw: getRaw
   };
 })();

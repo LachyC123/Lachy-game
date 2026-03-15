@@ -58,17 +58,21 @@ Game.Combat = (function () {
 
   function performPlayerAttack(type) {
     var player = Game.Player.getState();
-    var range = Game.Player.getAttackRange();
-    var arc = Game.Player.getAttackArc();
+    var range  = Game.Player.getAttackRange();
+    var arc    = Game.Player.getAttackArc();
     var baseDamage = Game.Player.getAttackDamage();
 
     // Heavy attacks are wider cleaves
-    var arcWidth = type === 'heavy' ? arc.width * 1.25 : arc.width;
+    var arcWidth = type === 'heavy' ? arc.width * 1.3 : arc.width;
+
+    // Combo bonus notification
+    if (player.comboCount >= 3) {
+      if (Game.UI) Game.UI.showNotification('Combo x' + player.comboCount + '!', 'success');
+    }
 
     // Find NPCs in attack range and arc
-    var nearby = Game.NPC.getNearPlayer(range + 10);
-    var hit = false;
-    var hitCount = 0;
+    var nearby = Game.NPC.getNearPlayer(range + 12);
+    var hit = false, hitCount = 0;
 
     for (var i = 0; i < nearby.length; i++) {
       var npc = nearby[i];
@@ -79,51 +83,69 @@ Game.Combat = (function () {
 
       // Check angle
       var angleToNpc = U.angle(player.x, player.y, npc.x, npc.y);
-      var angleDiff = Math.abs(normalizeAngle(angleToNpc - arc.angle));
+      var angleDiff  = Math.abs(normalizeAngle(angleToNpc - arc.angle));
       if (angleDiff > arcWidth / 2) continue;
 
       var damage = baseDamage;
 
       // Edge of swing = glancing blow
-      if (angleDiff > arcWidth * 0.36) damage *= 0.8;
+      if (angleDiff > arcWidth * 0.36) damage *= 0.75;
 
       // Heavy cleave falloff across multiple targets
-      if (type === 'heavy' && hitCount > 0) damage *= Math.max(0.55, 1 - hitCount * 0.18);
+      if (type === 'heavy' && hitCount > 0) damage *= Math.max(0.5, 1 - hitCount * 0.2);
 
-      // Critical chance scales with sword skill
-      var critChance = 0.08 + player.skills.sword * 0.002;
+      // Critical chance scales with sword skill + combo
+      var critChance = 0.08 + player.skills.sword * 0.002 + (player.comboCount > 1 ? 0.05 : 0);
       var crit = U.rng() < critChance;
-      if (crit) damage *= 1.6;
+      if (crit) damage *= 1.65;
 
       var actual = Game.NPC.takeDamage(npc, Math.round(damage), true);
-      hit = true;
-      hitCount++;
+      hit = true; hitCount++;
 
-      // Damage number
-      addDamageNumber(npc.x, npc.y - 20, actual + (crit ? '!' : ''));
-
-      if (Game.Renderer.triggerShake) {
-        Game.Renderer.triggerShake(type === 'heavy' ? 7 : 4);
+      // Blood particles from the NPC
+      if (Game.Renderer && actual > 5) {
+        var bloodCount = Math.min(10, Math.floor(actual / 4));
+        for (var bi = 0; bi < bloodCount; bi++) {
+          Game.Renderer.spawnParticle(npc.x + (Math.random()-0.5)*10, npc.y - 8, 'blood');
+        }
+        if (type === 'heavy') {
+          for (var bi = 0; bi < 4; bi++) {
+            Game.Renderer.spawnParticle(npc.x + (Math.random()-0.5)*12, npc.y - 5, 'impact');
+          }
+        }
       }
 
-      addEffect('slash', player.x, player.y, arc.angle, 0.2);
+      // Damage number with crit/combo info
+      addDamageNumber(npc.x, npc.y - 25, actual, crit, false);
 
-      if (crit) logCombat('Critical hit on ' + npc.name.full + ' for ' + actual + '.');
-      else logCombat('You hit ' + npc.name.full + ' for ' + actual + ' damage.');
+      if (Game.Renderer.triggerShake) {
+        Game.Renderer.triggerShake(type === 'heavy' ? (crit ? 12 : 7) : (crit ? 8 : 4));
+      }
+
+      // Add slash effect
+      var eff = { type: 'slash', x: player.x, y: player.y, angle: arc.angle,
+                  timer: 0.22, maxTimer: 0.22, isHeavy: type === 'heavy' };
+      activeEffects.push(eff);
+
+      if (crit) logCombat('⚡ Critical hit on ' + npc.name.full + ' for ' + actual + '!');
+      else       logCombat('You hit ' + npc.name.full + ' for ' + actual + '.');
 
       if (npc.faction !== 'bandits') {
         Game.Law.reportCrime('assault', null, npc);
         if (!npc.alive) Game.Law.reportCrime('murder', null, npc);
       }
 
-      Game.Player.gainSkill('sword', type === 'heavy' ? 0.1 : 0.05);
+      Game.Player.gainSkill('sword', type === 'heavy' ? 0.12 : 0.06);
     }
 
     if (!hit) {
-      addEffect('slash', player.x, player.y, arc.angle, 0.15);
+      // Miss slash
+      activeEffects.push({ type: 'slash', x: player.x, y: player.y, angle: arc.angle,
+                           timer: 0.15, maxTimer: 0.15, isHeavy: false });
       logCombat('Your swing misses.');
     } else if (hitCount > 1) {
-      logCombat('Cleave hit ' + hitCount + ' targets.');
+      logCombat('Cleave! Hit ' + hitCount + ' targets.');
+      if (Game.UI) Game.UI.showNotification('Cleave!', 'success');
     }
   }
 
@@ -133,13 +155,18 @@ Game.Combat = (function () {
     return a;
   }
 
-  function addDamageNumber(x, y, amount) {
+  function addDamageNumber(x, y, amount, isCrit, isHeal, isPlayer) {
+    var dispAmount = typeof amount === 'number' ? amount : amount;
     damageNumbers.push({
-      x: x + U.randFloat(-10, 10),
+      x: x + U.randFloat(-8, 8),
       y: y,
-      amount: amount,
-      timer: 1.0,
-      maxTimer: 1.0,
+      amount: dispAmount,
+      display: isCrit ? (dispAmount + '!!') : null,
+      isCrit: !!isCrit,
+      isHeal: !!isHeal,
+      isPlayer: !!isPlayer,
+      timer: isCrit ? 1.4 : 1.0,
+      maxTimer: isCrit ? 1.4 : 1.0,
       alpha: 1
     });
   }
@@ -149,6 +176,15 @@ Game.Combat = (function () {
       type: type, x: x, y: y, angle: angle,
       timer: duration, maxTimer: duration
     });
+  }
+
+  // Expose method for player damage numbers
+  function addPlayerDamageNumber(x, y, amount) {
+    addDamageNumber(x, y, amount, false, false, true);
+  }
+
+  function addHealNumber(x, y, amount) {
+    addDamageNumber(x, y, amount, false, true, false);
   }
 
   function logCombat(msg) {
@@ -163,6 +199,7 @@ Game.Combat = (function () {
   return {
     init: init, update: update,
     addDamageNumber: addDamageNumber, addEffect: addEffect,
+    addPlayerDamageNumber: addPlayerDamageNumber, addHealNumber: addHealNumber,
     getDamageNumbers: getDamageNumbers, getEffects: getEffects,
     getCombatLog: getCombatLog, logCombat: logCombat
   };

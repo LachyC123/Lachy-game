@@ -9,7 +9,7 @@ Game.Renderer = (function () {
 
   // Particles
   var particles = [];
-  var MAX_PARTICLES = 200;
+  var MAX_PARTICLES = 350;
 
   // Animation clock
   var animTime = 0;
@@ -19,6 +19,14 @@ Game.Renderer = (function () {
   var shakeDecay = 8;
   var shakeOffsetX = 0;
   var shakeOffsetY = 0;
+
+  // Hit flash (when player takes damage)
+  var hitFlash = 0;
+  var critFlash = 0;
+
+  // Vignette pre-rendered flag
+  var vignetteCanvas = null;
+  var vignetteBuilt  = false;
 
   function init(cvs) {
     canvas = cvs;
@@ -41,6 +49,7 @@ Game.Renderer = (function () {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     camera.w = screenW;
     camera.h = screenH;
+    vignetteBuilt = false; // rebuild vignette on resize
   }
 
   function updateCamera(dt) {
@@ -66,10 +75,40 @@ Game.Renderer = (function () {
     } else {
       shakeOffsetX = 0; shakeOffsetY = 0; shakeIntensity = 0;
     }
+
+    // Decay hit flash
+    if (hitFlash > 0)  hitFlash  = Math.max(0, hitFlash  - dt * 3.5);
+    if (critFlash > 0) critFlash = Math.max(0, critFlash - dt * 2.0);
+  }
+
+  function triggerHitFlash(isCrit) {
+    if (isCrit) critFlash = Math.max(critFlash, 0.8);
+    else        hitFlash  = Math.max(hitFlash,  0.6);
   }
 
   function triggerShake(intensity) {
     shakeIntensity = Math.max(shakeIntensity, intensity);
+  }
+
+  // ======= VIGNETTE =======
+
+  function renderVignette() {
+    if (!vignetteBuilt || !vignetteCanvas) {
+      vignetteCanvas = document.createElement('canvas');
+      vignetteCanvas.width  = screenW;
+      vignetteCanvas.height = screenH;
+      var vc = vignetteCanvas.getContext('2d');
+      var grad = vc.createRadialGradient(
+        screenW / 2, screenH / 2, screenH * 0.25,
+        screenW / 2, screenH / 2, screenH * 0.85
+      );
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.72)');
+      vc.fillStyle = grad;
+      vc.fillRect(0, 0, screenW, screenH);
+      vignetteBuilt = true;
+    }
+    ctx.drawImage(vignetteCanvas, 0, 0);
   }
 
   function render() {
@@ -145,6 +184,44 @@ Game.Renderer = (function () {
 
     // Stealth visibility indicator
     renderStealthMeter();
+
+    // Post-process: vignette
+    renderVignette();
+
+    // Post-process: hit flash overlay
+    if (hitFlash > 0.01) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(160,10,10,' + (hitFlash * 0.35) + ')';
+      ctx.fillRect(0, 0, screenW, screenH);
+      ctx.restore();
+    }
+    if (critFlash > 0.01) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(220,180,20,' + (critFlash * 0.2) + ')';
+      ctx.fillRect(0, 0, screenW, screenH);
+      ctx.restore();
+    }
+
+    // Needs: starvation/parched red pulse
+    if (Game.Needs && Game.Needs.isCritical()) {
+      var needsPulse = 0.12 * (0.5 + 0.5 * Math.sin(animTime * 3));
+      ctx.save();
+      ctx.fillStyle = 'rgba(160,0,0,' + needsPulse + ')';
+      ctx.fillRect(0, 0, screenW, screenH);
+      ctx.restore();
+    }
+
+    // Exhaustion desaturation effect (subtle desaturation via dark overlay)
+    if (Game.Needs) {
+      var fatigue = Game.Needs.getState().fatigue;
+      if (fatigue > 75) {
+        var alpha = ((fatigue - 75) / 25) * 0.18;
+        ctx.save();
+        ctx.fillStyle = 'rgba(40,40,60,' + alpha + ')';
+        ctx.fillRect(0, 0, screenW, screenH);
+        ctx.restore();
+      }
+    }
 
     // End screen shake transform
     ctx.restore();
@@ -435,6 +512,12 @@ Game.Renderer = (function () {
     else faceDown = 0;
 
     if (npc.state === 'sleep') ctx.globalAlpha = 0.55;
+
+    // Hit flash: briefly draw white overlay
+    if (npc.hitFlashTimer > 0) {
+      npc.hitFlashTimer -= 0.016; // approximate dt
+      ctx.globalAlpha = Math.min(0.7, npc.hitFlashTimer * 6);
+    }
 
     // Shadow
     ctx.fillStyle = 'rgba(0,0,0,0.16)';
@@ -1024,6 +1107,38 @@ Game.Renderer = (function () {
         p.size = 2;
         p.color = [60 + (Math.random() * 40 | 0), 100 + (Math.random() * 40 | 0), 30];
         break;
+      case 'blood':
+        p.vx = (Math.random() - 0.5) * 40;
+        p.vy = -20 - Math.random() * 30;
+        p.maxLife = 0.5 + Math.random() * 0.4;
+        p.size = 2 + Math.random() * 2;
+        p.color = [140 + (Math.random() * 30 | 0), 8, 8];
+        p.gravity = 60;
+        break;
+      case 'impact':
+        p.vx = (Math.random() - 0.5) * 50;
+        p.vy = -30 - Math.random() * 20;
+        p.maxLife = 0.25 + Math.random() * 0.15;
+        p.size = 1.5 + Math.random() * 2;
+        p.color = [220, 200, 160];
+        p.gravity = 0;
+        break;
+      case 'heal':
+        p.vx = (Math.random() - 0.5) * 14;
+        p.vy = -18 - Math.random() * 14;
+        p.maxLife = 0.7 + Math.random() * 0.4;
+        p.size = 2 + Math.random() * 2;
+        p.color = [60, 200, 80];
+        p.gravity = 0;
+        break;
+      case 'herb':
+        p.vx = (Math.random() - 0.5) * 18;
+        p.vy = -10 - Math.random() * 10;
+        p.maxLife = 1.0 + Math.random() * 0.5;
+        p.size = 2.5;
+        p.color = [50, 160, 50];
+        p.gravity = 3;
+        break;
     }
     particles.push(p);
   }
@@ -1040,6 +1155,9 @@ Game.Renderer = (function () {
       if (p.type === 'ember') p.vy += 10 * dt;
       if (p.type === 'splash') p.vy += 35 * dt;
       if (p.type === 'leaf') { p.vy += 8 * dt; p.vx += Math.sin(p.life * 5) * 10 * dt; }
+      if (p.type === 'blood') { p.vy += (p.gravity || 60) * dt; p.vx *= 0.96; }
+      if (p.type === 'heal')  { p.vx *= 0.95; }
+      if (p.type === 'herb')  { p.vy += (p.gravity || 3) * dt; p.vx += Math.sin(p.life * 4) * 5 * dt; }
     }
   }
 
@@ -1146,21 +1264,60 @@ Game.Renderer = (function () {
       var ef = effects[i];
       var sx = Math.floor(ef.x - camera.x), sy = Math.floor(ef.y - camera.y);
       var progress = 1 - ef.timer / ef.maxTimer;
+
       if (ef.type === 'slash') {
         ctx.save();
-        ctx.globalAlpha = (1 - progress) * 0.8;
-        ctx.strokeStyle = '#eee';
-        ctx.lineWidth = 2.5;
+        var alpha = (1 - progress) * 0.85;
+        ctx.globalAlpha = alpha;
+
+        // Outer slash arc
+        ctx.strokeStyle = ef.isHeavy ? '#ffd080' : '#e8e8e8';
+        ctx.lineWidth   = ef.isHeavy ? 3.5 : 2.5;
         ctx.beginPath();
-        var r = 14 + progress * 18;
-        ctx.arc(sx, sy - 4, r, ef.angle - 0.7, ef.angle + 0.7);
+        var r = 16 + progress * 22;
+        ctx.arc(sx, sy - 4, r, ef.angle - 0.8, ef.angle + 0.8);
         ctx.stroke();
         // Inner bright arc
-        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.arc(sx, sy - 4, r - 3, ef.angle - 0.5, ef.angle + 0.5);
+        ctx.arc(sx, sy - 4, r - 4, ef.angle - 0.55, ef.angle + 0.55);
         ctx.stroke();
+
+        // Speed lines
+        ctx.strokeStyle = ef.isHeavy ? 'rgba(255,180,40,0.4)' : 'rgba(200,200,200,0.3)';
+        ctx.lineWidth = 1;
+        for (var j = -2; j <= 2; j++) {
+          var la = ef.angle + j * 0.18;
+          ctx.beginPath();
+          ctx.moveTo(sx + Math.cos(la) * (r - 8), sy - 4 + Math.sin(la) * (r - 8));
+          ctx.lineTo(sx + Math.cos(la) * (r + 6),  sy - 4 + Math.sin(la) * (r + 6));
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (ef.type === 'block') {
+        // Shield block spark effect
+        ctx.save();
+        ctx.globalAlpha = (1 - progress) * 0.9;
+        for (var j = 0; j < 5; j++) {
+          var sa = ef.angle + (Math.random() - 0.5) * 1.2;
+          var sd = 8 + Math.random() * 12;
+          ctx.strokeStyle = '#e0e0a0'; ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + Math.cos(sa) * sd, sy + Math.sin(sa) * sd);
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (ef.type === 'parry') {
+        // Perfect parry golden ring
+        ctx.save();
+        var pr = 20 + progress * 30;
+        ctx.globalAlpha = (1 - progress) * 0.95;
+        ctx.strokeStyle = '#ffd040'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(sx, sy - 4, pr, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#ffffc0'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(sx, sy - 4, pr - 4, 0, Math.PI * 2); ctx.stroke();
         ctx.restore();
       }
     }
@@ -1169,17 +1326,48 @@ Game.Renderer = (function () {
   function renderDamageNumbers() {
     var nums = Game.Combat.getDamageNumbers();
     ctx.save();
-    ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     for (var i = 0; i < nums.length; i++) {
       var dn = nums[i];
       var sx = Math.floor(dn.x - camera.x), sy = Math.floor(dn.y - camera.y);
       ctx.globalAlpha = dn.alpha;
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 3;
-      ctx.strokeText('-' + dn.amount, sx, sy);
-      ctx.fillStyle = '#dd2222';
-      ctx.fillText('-' + dn.amount, sx, sy);
+
+      var isCrit  = dn.isCrit;
+      var isHeal  = dn.isHeal;
+      var isPlayer = dn.isPlayer;
+
+      // Font size: bigger for crits
+      var fontSize = isCrit ? 18 : (isHeal ? 15 : 14);
+      ctx.font = 'bold ' + fontSize + 'px serif';
+
+      // Scale crit numbers up as they rise
+      if (isCrit) {
+        var scl = 1 + (1 - dn.alpha) * 0.5;
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.scale(scl, scl);
+        ctx.strokeStyle = '#200'; ctx.lineWidth = 4;
+        ctx.strokeText(dn.display || ('-' + dn.amount), 0, 0);
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillText(dn.display || ('-' + dn.amount), 0, 0);
+        ctx.restore();
+      } else if (isHeal) {
+        ctx.strokeStyle = '#002200'; ctx.lineWidth = 3;
+        ctx.strokeText('+' + dn.amount, sx, sy);
+        ctx.fillStyle = '#60ee60';
+        ctx.fillText('+' + dn.amount, sx, sy);
+      } else if (isPlayer) {
+        // Player took damage: shown in yellow/orange
+        ctx.strokeStyle = '#300'; ctx.lineWidth = 3;
+        ctx.strokeText('-' + dn.amount, sx, sy);
+        ctx.fillStyle = '#ff8844';
+        ctx.fillText('-' + dn.amount, sx, sy);
+      } else {
+        ctx.strokeStyle = '#100'; ctx.lineWidth = 3;
+        ctx.strokeText('-' + dn.amount, sx, sy);
+        ctx.fillStyle = '#ee3333';
+        ctx.fillText('-' + dn.amount, sx, sy);
+      }
     }
     ctx.restore();
   }
@@ -1221,31 +1409,57 @@ Game.Renderer = (function () {
       ctx.restore();
     }
 
-    // Sunrise/sunset tints
-    if (hour >= 5 && hour < 7) {
+    // Sunrise golden hour (5–8)
+    if (hour >= 5 && hour < 8) {
       ctx.save();
-      var tint = 0.12 * (1 - (hour - 5) / 2);
-      ctx.fillStyle = 'rgba(200,110,50,' + tint + ')';
-      ctx.fillRect(0, 0, screenW, screenH);
-      ctx.restore();
-    } else if (hour >= 18 && hour < 20) {
-      ctx.save();
-      var tint = 0.12 * ((hour - 18) / 2);
-      ctx.fillStyle = 'rgba(200,90,40,' + tint + ')';
+      var t = hour < 6.5 ? (hour - 5) / 1.5 : 1 - (hour - 6.5) / 1.5;
+      t = U.clamp(t, 0, 1);
+      ctx.fillStyle = 'rgba(210,130,50,' + (t * 0.16) + ')';
       ctx.fillRect(0, 0, screenW, screenH);
       ctx.restore();
     }
+    // Sunset / golden hour (17–20)
+    if (hour >= 17 && hour < 20) {
+      ctx.save();
+      var t = hour < 18.5 ? (hour - 17) / 1.5 : 1 - (hour - 18.5) / 1.5;
+      t = U.clamp(t, 0, 1);
+      ctx.fillStyle = 'rgba(220,100,40,' + (t * 0.20) + ')';
+      ctx.fillRect(0, 0, screenW, screenH);
+      // Extra warm purple at late dusk
+      if (hour >= 18.5 && hour < 20) {
+        var t2 = (hour - 18.5) / 1.5;
+        ctx.fillStyle = 'rgba(80,40,100,' + (t2 * 0.12) + ')';
+        ctx.fillRect(0, 0, screenW, screenH);
+      }
+      ctx.restore();
+    }
+    // Blue-gray overcast color when raining
+    if (Game.Ambient) {
+      var weather = Game.Ambient.getWeather();
+      if (weather.type === 'rain' || weather.type === 'overcast') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(30,40,60,' + (weather.intensity * 0.12) + ')';
+        ctx.fillRect(0, 0, screenW, screenH);
+        ctx.restore();
+      }
+    }
   }
 
-  function drawLightSource(wx, wy, radius) {
+  function drawLightSource(wx, wy, radius, r, g, b) {
     var sx = wx - camera.x, sy = wy - camera.y;
     if (sx < -radius || sx > screenW + radius || sy < -radius || sy > screenH + radius) return;
-    var grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
-    grad.addColorStop(0, 'rgba(240,180,80,0.6)');
-    grad.addColorStop(0.5, 'rgba(200,120,40,0.2)');
-    grad.addColorStop(1, 'rgba(200,100,30,0)');
+    // Flicker effect: slight random radius variation
+    var flicker = 1 + (Math.random() - 0.5) * 0.06;
+    var fr = radius * flicker;
+    r = r || 240; g = g || 180; b = b || 80;
+    var grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, fr);
+    grad.addColorStop(0,   'rgba(' + r + ',' + g + ',' + b + ',0.65)');
+    grad.addColorStop(0.4, 'rgba(' + r + ',' + (g >> 1) + ',' + (b >> 2) + ',0.25)');
+    grad.addColorStop(1,   'rgba(' + (r >> 1) + ',50,10,0)');
     ctx.fillStyle = grad;
-    ctx.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
+    ctx.beginPath();
+    ctx.arc(sx, sy, fr, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // ======= FOG =======
@@ -1622,6 +1836,6 @@ Game.Renderer = (function () {
   return {
     init: init, resize: resize, updateCamera: updateCamera, render: render,
     worldToScreen: worldToScreen, screenToWorld: screenToWorld, getCamera: getCamera,
-    spawnParticle: spawnParticle, triggerShake: triggerShake
+    spawnParticle: spawnParticle, triggerShake: triggerShake, triggerHitFlash: triggerHitFlash
   };
 })();

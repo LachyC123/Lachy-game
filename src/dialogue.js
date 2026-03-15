@@ -82,21 +82,48 @@ Game.Dialogue = (function () {
     }
 
     if (npc.job === 'tavernKeeper') {
-      options.push({ text: 'I need a room for the night.', action: 'rest' });
+      options.push({ text: 'I need a room for the night. (10g)', action: 'rest' });
+      options.push({ text: 'Give me food and drink. (3g)', action: 'buyMeal' });
+    }
+
+    // Healer: alchemy / potion brewing from herbs
+    if (npc.job === 'healer') {
+      options.push({ text: 'I would like to trade.', action: 'trade' });
+      var playerHerbs = getPlayerHerbCount();
+      if (playerHerbs > 0) {
+        options.push({ text: 'Can you brew my herbs into potions? (' + playerHerbs + ' herbs)', action: 'brewPotions' });
+      }
+      options.push({ text: 'I am injured. Can you help?', action: 'healWounds' });
+    }
+
+    // Blacksmith: repair weapons/armor
+    if (npc.job === 'blacksmith') {
+      var ps = Game.Player.getState();
+      var needsRepair = (ps.equipped.weapon && ps.equipped.weapon.durability < 100) ||
+                        (ps.equipped.armor  && ps.equipped.armor.durability  < 100);
+      if (needsRepair) {
+        options.push({ text: 'Can you repair my equipment?', action: 'repairGear' });
+      }
     }
 
     // Quest-like options
-    if (npc.job === 'farmer' || npc.job === 'villager') {
+    if (npc.job === 'farmer' || npc.job === 'villager' || npc.job === 'carpenter' || npc.job === 'woodcutter') {
       options.push({ text: 'Do you need any help?', action: 'askWork' });
     }
 
     if (npc.job === 'guard' && Game.Player.getState().bounty > 0) {
-      options.push({ text: 'I wish to pay my bounty. (' + Game.Player.getState().bounty + ' gold)', action: 'payBounty' });
+      options.push({ text: 'I wish to pay my bounty. (' + Game.Player.getState().bounty + 'g)', action: 'payBounty' });
+    }
+
+    // Pickpocket (stealth-based; only shown if stealth > 15)
+    var ps = Game.Player.getState();
+    if (ps.skills.stealth > 15 && rel < 10 && npc.job !== 'guard' && npc.job !== 'king') {
+      options.push({ text: '[Stealth] Attempt to pickpocket.', action: 'pickpocket' });
     }
 
     // Speech skill check options
-    if (Game.Player.getState().skills.speech > 20 && rel > -10) {
-      options.push({ text: '[Persuade] Tell me something useful.', action: 'persuade' });
+    if (ps.skills.speech > 20 && rel > -10) {
+      options.push({ text: '[Speech] Tell me something useful. (' + Math.floor(ps.skills.speech) + ' speech)', action: 'persuade' });
     }
 
     options.push({ text: 'Farewell.', action: 'leave' });
@@ -108,45 +135,24 @@ Game.Dialogue = (function () {
     dialogueHistory.push({ speaker: 'player', text: opt.text });
 
     switch (opt.action) {
-      case 'askAboutPlace':
-        respondAboutPlace();
-        break;
-      case 'askLifestyle':
-        respondLifestyle();
-        break;
-      case 'askJob':
-        respondJob();
-        break;
-      case 'askRelationships':
-        respondRelationships();
-        break;
-      case 'askRumors':
-        respondRumors();
-        break;
-      case 'trade':
-        openTrade();
-        break;
-      case 'rest':
-        respondRest();
-        break;
-      case 'askWork':
-        respondWork();
-        break;
-      case 'payBounty':
-        payBounty();
-        break;
-      case 'persuade':
-        respondPersuade();
-        break;
-      case 'leave':
-        endDialogue();
-        return;
-      case 'buyItem':
-        buyItem(opt.data);
-        return;
-      case 'sellItem':
-        sellItem(opt.data);
-        return;
+      case 'askAboutPlace':    respondAboutPlace();    break;
+      case 'askLifestyle':     respondLifestyle();     break;
+      case 'askJob':           respondJob();           break;
+      case 'askRelationships': respondRelationships(); break;
+      case 'askRumors':        respondRumors();        break;
+      case 'trade':            openTrade();            break;
+      case 'rest':             respondRest();          break;
+      case 'buyMeal':          respondBuyMeal();       break;
+      case 'brewPotions':      respondBrewPotions();   break;
+      case 'healWounds':       respondHealWounds();    break;
+      case 'repairGear':       respondRepairGear();    break;
+      case 'askWork':          respondWork();          break;
+      case 'payBounty':        payBounty();            break;
+      case 'pickpocket':       respondPickpocket();    break;
+      case 'persuade':         respondPersuade();      break;
+      case 'leave':            endDialogue();          return;
+      case 'buyItem':          buyItem(opt.data);      return;
+      case 'sellItem':         sellItem(opt.data);     return;
       case 'backToDialogue':
         tradeMode = false;
         buildDialogue();
@@ -343,17 +349,188 @@ Game.Dialogue = (function () {
     var player = Game.Player.getState();
     if (player.gold >= cost) {
       player.gold -= cost;
-      // Advance time to morning
-      if (Game.advanceTime) Game.advanceTime(8 * 60); // 8 hours
-      player.health = player.maxHealth;
-      player.stamina = player.maxStamina;
-      player.bleeding = 0;
-      dialogueText = 'Rest well. You look like you need it.';
+      // Advance 8 hours
+      if (Game.advanceTime) Game.advanceTime(8 * 60);
+      player.health    = player.maxHealth;
+      player.stamina   = player.maxStamina;
+      player.bleeding  = 0;
+      player.wounds    = [];
+      // Sleep restores fatigue
+      if (Game.Needs) Game.Needs.sleep(8);
+      dialogueText = 'Sleep well, friend. Room and board for the night. You look better already.';
       player.daysAlive++;
     } else {
       dialogueText = 'That will be ' + cost + ' gold for a room. Come back when you can pay.';
     }
     rebuildWithBack();
+  }
+
+  function respondBuyMeal() {
+    var cost = 3;
+    var player = Game.Player.getState();
+    if (player.gold >= cost) {
+      player.gold -= cost;
+      // Provide food + drink items
+      Game.Player.addItem({ id:'tavern_meal', name:'Tavern Meal', type:'food', value:3, qty:1,
+                            healAmount:12, satiation:35, hydration:25 });
+      Game.Player.heal(12);
+      if (Game.Needs) {
+        Game.Needs.eat({ satiation:35, hydration:25, name:'Tavern Meal' });
+      }
+      dialogueText = 'Here you go - a hot meal and some ale. That will keep you going!';
+      currentNPC.playerRelation += 2;
+    } else {
+      dialogueText = 'A meal and ale costs ' + cost + ' gold. Short on coin?';
+    }
+    rebuildWithBack();
+  }
+
+  function respondBrewPotions() {
+    var player    = Game.Player.getState();
+    var herbTypes = { yarrow:'antibleed', valerian:'sleep', chamomile:'food',
+                      garlic:'antiseptic', elderflower:'health' };
+    var brewed    = [];
+    var cost      = 5; // per potion brewing fee
+
+    for (var herbId in herbTypes) {
+      var herb = Game.Player.hasItem(herbId);
+      if (herb) {
+        var type = herbTypes[herbId];
+        var totalCost = herb.qty * cost;
+        if (player.gold >= totalCost) {
+          player.gold -= totalCost;
+          Game.Player.removeItem(herbId, herb.qty);
+
+          var potion = makePotionFromHerb(herbId, herb.qty);
+          if (potion) {
+            Game.Player.addItem(potion);
+            brewed.push(herb.qty + 'x ' + potion.name);
+          }
+        }
+      }
+    }
+
+    if (brewed.length > 0) {
+      dialogueText = 'Done! Brewed you: ' + brewed.join(', ') + '. Use them wisely.';
+      currentNPC.playerRelation += 3;
+      Game.Player.gainSkill('herbalism', 0.8);
+    } else {
+      dialogueText = 'You do not have enough gold to pay the brewing fee, or no herbs I can work with.';
+    }
+    rebuildWithBack();
+  }
+
+  function makePotionFromHerb(herbId, qty) {
+    var potions = {
+      yarrow:      { id:'potion_antibleed', name:'Yarrow Salve', type:'potion', value:12, qty:qty,
+                     healAmount:5, stopsBleeding:true, desc:'Stops bleeding' },
+      valerian:    { id:'potion_sleep', name:'Valerian Draught', type:'potion', value:14, qty:qty,
+                     healAmount:3, restoresFatigue:40, desc:'Restores fatigue' },
+      chamomile:   { id:'potion_food', name:'Chamomile Tea', type:'food', value:8, qty:qty,
+                     healAmount:6, satiation:25, hydration:20, desc:'Restores hunger & thirst' },
+      garlic:      { id:'potion_antiseptic', name:'Garlic Poultice', type:'potion', value:10, qty:qty,
+                     healAmount:8, clearsWounds:true, desc:'Clears wounds' },
+      elderflower: { id:'potion_health', name:'Elderflower Tonic', type:'potion', value:15, qty:qty,
+                     healAmount:25, desc:'Strong health restoration' }
+    };
+    return potions[herbId] || null;
+  }
+
+  function respondHealWounds() {
+    var player = Game.Player.getState();
+    var wounds = player.wounds || [];
+    var cost   = 8 + wounds.length * 4;
+
+    if (wounds.length === 0 && player.bleeding <= 0 && player.health >= player.maxHealth * 0.9) {
+      dialogueText = 'You look fine to me. Come back when you are truly hurt.';
+      rebuildWithBack();
+      return;
+    }
+
+    if (player.gold >= cost) {
+      player.gold -= cost;
+      player.health    = Math.min(player.maxHealth, player.health + 20 + wounds.length * 5);
+      player.bleeding  = 0;
+      player.wounds    = [];
+      dialogueText = 'I have cleaned and bound your wounds. ' + cost + 'g. Rest up now.';
+      currentNPC.playerRelation += 3;
+    } else {
+      dialogueText = 'Treating your wounds will cost ' + cost + ' gold. I cannot work for free.';
+    }
+    rebuildWithBack();
+  }
+
+  function respondRepairGear() {
+    var player = Game.Player.getState();
+    var totalCost = 0;
+    var repaired  = [];
+
+    var wep = player.equipped.weapon;
+    var arm = player.equipped.armor;
+    if (wep && wep.durability !== undefined && wep.durability < 100) {
+      var wCost = Math.ceil((100 - wep.durability) * 0.4);
+      totalCost += wCost;
+    }
+    if (arm && arm.durability !== undefined && arm.durability < 100) {
+      var aCost = Math.ceil((100 - arm.durability) * 0.5);
+      totalCost += aCost;
+    }
+
+    if (totalCost === 0) {
+      dialogueText = 'Your gear is in fine shape. Nothing to repair.';
+      rebuildWithBack();
+      return;
+    }
+
+    if (player.gold >= totalCost) {
+      player.gold -= totalCost;
+      if (wep && wep.durability !== undefined) { wep.durability = 100; repaired.push(wep.name); }
+      if (arm && arm.durability !== undefined) { arm.durability = 100; repaired.push(arm.name); }
+      dialogueText = 'Good as new! Repaired: ' + repaired.join(', ') + '. Cost: ' + totalCost + 'g.';
+      currentNPC.playerRelation += 2;
+    } else {
+      dialogueText = 'Repairs will cost ' + totalCost + 'g. You are short on gold.';
+    }
+    rebuildWithBack();
+  }
+
+  function respondPickpocket() {
+    var npc    = currentNPC;
+    var player = Game.Player.getState();
+
+    // Close dialogue first
+    endDialogue();
+
+    if (Game.Minigames && !Game.Minigames.isActive()) {
+      Game.Minigames.startPickpocket(npc,
+        function () {
+          // Success
+          var goldStolen = Math.floor(5 + Math.random() * 20);
+          player.gold += goldStolen;
+          Game.Player.gainSkill('stealth', 1.5);
+          if (Game.UI) Game.UI.showNotification('Pickpocketed ' + goldStolen + 'g from ' + npc.name.first + '.', 'success');
+          Game.Law.reportCrime('theft', null, npc);
+        },
+        function () {
+          // Caught
+          npc.playerRelation -= 15;
+          Game.Law.reportCrime('theft', null, npc);
+          if (Game.UI) Game.UI.showNotification('Caught! ' + npc.name.first + ' noticed your hand in their pocket.', 'danger');
+        }
+      );
+    }
+  }
+
+  // Helper: count total herbs in player inventory
+  function getPlayerHerbCount() {
+    var player = Game.Player.getState();
+    var count = 0;
+    var herbIds = ['yarrow','valerian','chamomile','garlic','elderflower','nightshade'];
+    for (var i = 0; i < player.inventory.length; i++) {
+      var item = player.inventory[i];
+      if (item.type === 'herb' || herbIds.indexOf(item.id) >= 0) count += (item.qty || 1);
+    }
+    return count;
   }
 
   function respondWork() {
