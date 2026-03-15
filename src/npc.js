@@ -5,16 +5,20 @@ Game.NPC = (function () {
   var W, TS;
   var npcs = [];
   var spatialHash;
-  var NPC_UPDATE_RANGE = 600; // pixels - only update nearby NPCs AI
+  var NPC_UPDATE_RANGE = 600;
 
-  // NPC behavior states
+  // ─── States ────────────────────────────────────────────────────────────────
   var STATE = {
     IDLE: 'idle', TRAVEL: 'travel', WORK: 'work', SOCIALIZE: 'socialize',
     SLEEP: 'sleep', FLEE: 'flee', FIGHT: 'fight', INVESTIGATE: 'investigate',
-    PATROL: 'patrol', DEAD: 'dead', ARRESTED: 'arrested'
+    PATROL: 'patrol', DEAD: 'dead', ARRESTED: 'arrested',
+    WARN: 'warn',       // Guard verbally warning player
+    PURSUE: 'pursue',   // Guard/NPC actively chasing player
+    SCARED: 'scared',   // Cowering / panicking
+    MOURN: 'mourn'      // Reacting to a nearby death
   };
 
-  // Job definitions with schedules
+  // ─── Job Schedules ─────────────────────────────────────────────────────────
   var JOBS = {
     farmer: {
       label: 'Farmer',
@@ -31,7 +35,7 @@ Game.NPC = (function () {
       label: 'Guard',
       schedule: [
         { start: 6, end: 18, state: STATE.PATROL },
-        { start: 18, end: 22, state: STATE.IDLE },
+        { start: 18, end: 22, state: STATE.SOCIALIZE },
         { start: 22, end: 6, state: STATE.SLEEP }
       ]
     },
@@ -232,6 +236,7 @@ Game.NPC = (function () {
   var LIFESTYLES = ['family', 'ambitious', 'devout', 'frugal', 'hedonist', 'outdoorsy', 'scholarly', 'community'];
   var RELATIONSHIP_TYPES = ['family', 'friend', 'rival', 'coworker', 'partner'];
 
+  // ─── NPC Factory ───────────────────────────────────────────────────────────
   function createNPC(opts) {
     var gender = opts.gender || (U.rng() < 0.5 ? 'male' : 'female');
     var name = opts.name || U.generateName(gender);
@@ -271,17 +276,33 @@ Game.NPC = (function () {
       blocking: false,
       aggression: opts.aggression || 0.3,
       bleeding: 0,
+      // Guard arrest system
+      arrestDemandActive: false,
+      arrestDemandTimer: 0,
+      pursuitTimer: 0,
+      lastKnownPlayerX: -1,
+      lastKnownPlayerY: -1,
+      warnTimer: 0,
       // Relationships
-      playerRelation: opts.playerRelation || 0, // -100 to 100
+      playerRelation: opts.playerRelation || 0,
       faction: opts.faction || 'civilian',
       lifestyle: opts.lifestyle || pickLifestyle(opts.job),
       relationships: opts.relationships || [],
-      // Memory
+      // Memory & emotions
       memory: [],
+      gossipMemory: [],       // hearsay from other NPCs
       lastSawPlayer: -1,
       lastSawCrime: -1,
       alarmed: false,
       alarmTimer: 0,
+      // Emotional state
+      emotion: 'neutral',       // neutral, happy, scared, angry, suspicious, disgusted
+      emotionTimer: 0,
+      emotionIntensity: 0,
+      fearSource: null,
+      // Group behavior
+      groupRole: 'solo',        // solo, leader, follower
+      panicSpreadCooldown: 0,
       // Speech
       bark: '',
       barkTimer: 0,
@@ -295,25 +316,66 @@ Game.NPC = (function () {
       patrolIndex: 0,
       // Merchant data
       inventory: opts.inventory || [],
-      // state
+      // Location
       currentLocation: opts.location || 'wilderness',
       // Activity & immersion
-      activityAnim: 0,       // phase counter for tool use animation
-      workTaskTimer: 0,      // how long to stay put and perform work task
-      workTaskCooldown: 0,   // delay before selecting another stationary task
-      workAnchorX: 0,        // where current task is performed
+      activityAnim: 0,
+      workTaskTimer: 0,
+      workTaskCooldown: 0,
+      workAnchorX: 0,
       workAnchorY: 0,
-      alertIcon: '',         // '!' or '?' shown above head
+      alertIcon: '',
       alertIconTimer: 0,
-      greetedPlayer: false,  // has greeted player this encounter
-      greetCooldown: 0,      // cooldown before greeting again
-      timesMetPlayer: 0,     // how many times player approached
-      lastPlayerDist: 999    // track approach/leave
+      greetedPlayer: false,
+      greetCooldown: 0,
+      timesMetPlayer: 0,
+      lastPlayerDist: 999,
+      // Shelter seeking (weather)
+      seekingShelter: false,
+      shelterX: 0,
+      shelterY: 0,
+      // Ambient variety
+      idleActivityTimer: U.randFloat(0, 8),
+      idleActivity: 'stand',    // stand, look_around, stretch, sit, hum
+      mourningTimer: 0
     };
     npcs.push(npc);
     return npc;
   }
 
+  function setEmotion(npc, emotion, intensity, duration) {
+    if (!npc) return;
+    npc.emotion = emotion;
+    npc.emotionIntensity = Math.min(1, intensity);
+    npc.emotionTimer = duration;
+  }
+
+  // ─── Guard Backup System ───────────────────────────────────────────────────
+  function callGuardBackup(callingGuard, killOnSight) {
+    var px = Game.Player.getState().x;
+    var py = Game.Player.getState().y;
+    var nearby = spatialHash.query(callingGuard.x, callingGuard.y, 350);
+    for (var i = 0; i < nearby.length; i++) {
+      var n = nearby[i];
+      if (n.id === callingGuard.id || !n.alive || n.job !== 'guard') continue;
+      if (n.state === STATE.FIGHT || n.state === STATE.PURSUE) continue;
+      if (killOnSight) {
+        n.state = STATE.FIGHT;
+        n.combatTarget = 'player';
+        setBark(n, Game.Law.getKosCallout());
+      } else {
+        n.state = STATE.PURSUE;
+        n.lastKnownPlayerX = px;
+        n.lastKnownPlayerY = py;
+        n.pursuitTimer = 30;
+        n.arrestDemandActive = true;
+        n.arrestDemandTimer = 5;
+        if (n.barkTimer <= 0) setBark(n, U.pick(['Move to intercept!', 'Block the exits!', 'Do not let them escape!', 'With me!']));
+      }
+    }
+  }
+
+  // ─── Color / Label Helpers ─────────────────────────────────────────────────
   function getJobColor(job) {
     switch (job) {
       case 'guard': return '#2c4a8a';
@@ -356,10 +418,9 @@ Game.NPC = (function () {
     return U.pick(LIFESTYLES);
   }
 
+  // ─── Relationships ─────────────────────────────────────────────────────────
   function buildSocialRelationships() {
-    for (var i = 0; i < npcs.length; i++) {
-      npcs[i].relationships = [];
-    }
+    for (var i = 0; i < npcs.length; i++) npcs[i].relationships = [];
 
     for (var i = 0; i < npcs.length; i++) {
       var a = npcs[i];
@@ -367,7 +428,7 @@ Game.NPC = (function () {
         return n.id !== a.id && (n.faction === a.faction || n.currentLocation === a.currentLocation);
       });
 
-      var relCount = Math.min(candidates.length, U.randInt(1, 3));
+      var relCount = Math.min(candidates.length, U.randInt(1, 4));
       for (var r = 0; r < relCount; r++) {
         if (candidates.length === 0) break;
         var b = candidates.splice(U.randInt(0, candidates.length - 1), 1)[0];
@@ -387,6 +448,7 @@ Game.NPC = (function () {
     }
   }
 
+  // ─── Init ─────────────────────────────────────────────────────────────────
   function init() {
     W = Game.World;
     TS = W.TILE_SIZE;
@@ -398,11 +460,11 @@ Game.NPC = (function () {
     buildSocialRelationships();
   }
 
+  // ─── NPC Spawning ─────────────────────────────────────────────────────────
   function spawnAllNPCs() {
     var locs = W.getLocations();
 
     // === ASHFORD TOWN ===
-    // King
     createNPC({
       name: { first: 'Aldric', last: 'Valdren', full: 'King Aldric Valdren' },
       job: 'king', gender: 'male', age: 52,
@@ -415,7 +477,6 @@ Game.NPC = (function () {
       location: 'ashford'
     });
 
-    // Nobles
     for (var i = 0; i < 3; i++) {
       createNPC({
         job: 'noble', age: U.randInt(30, 60),
@@ -427,13 +488,16 @@ Game.NPC = (function () {
       });
     }
 
-    // Guards (patrol town)
+    // Guards - more varied patrol routes
     var guardPatrols = [
       [{ x: 110, y: 128 }, { x: 128, y: 128 }, { x: 146, y: 128 }, { x: 128, y: 128 }],
       [{ x: 128, y: 110 }, { x: 128, y: 128 }, { x: 128, y: 146 }, { x: 128, y: 128 }],
       [{ x: 110, y: 110 }, { x: 146, y: 110 }, { x: 146, y: 146 }, { x: 110, y: 146 }],
-      [{ x: 128, y: 148 }, { x: 128, y: 150 }, { x: 130, y: 150 }, { x: 126, y: 150 }],
-      [{ x: 108, y: 128 }, { x: 106, y: 128 }, { x: 106, y: 130 }, { x: 108, y: 130 }]
+      [{ x: 128, y: 148 }, { x: 130, y: 150 }, { x: 126, y: 150 }, { x: 128, y: 148 }],
+      [{ x: 108, y: 128 }, { x: 106, y: 130 }, { x: 108, y: 132 }, { x: 110, y: 130 }],
+      [{ x: 120, y: 118 }, { x: 135, y: 118 }, { x: 135, y: 130 }, { x: 120, y: 130 }],
+      [{ x: 113, y: 138 }, { x: 120, y: 138 }, { x: 120, y: 144 }, { x: 113, y: 144 }],
+      [{ x: 140, y: 135 }, { x: 148, y: 135 }, { x: 148, y: 142 }, { x: 140, y: 142 }]
     ];
     for (var i = 0; i < 8; i++) {
       var pp = guardPatrols[i % guardPatrols.length].map(function (p) {
@@ -451,7 +515,6 @@ Game.NPC = (function () {
       });
     }
 
-    // Tavern keeper
     createNPC({
       name: { first: 'Gerda', last: 'Holden', full: 'Gerda Holden' },
       job: 'tavernKeeper', gender: 'female', age: 45,
@@ -467,7 +530,6 @@ Game.NPC = (function () {
       ]
     });
 
-    // Blacksmith
     createNPC({
       name: { first: 'Roderic', last: 'Stone', full: 'Roderic Stone' },
       job: 'blacksmith', gender: 'male', age: 38,
@@ -485,7 +547,6 @@ Game.NPC = (function () {
       ]
     });
 
-    // Carpenter
     createNPC({
       name: { first: 'Edwin', last: 'Cale', full: 'Edwin Cale' },
       job: 'carpenter', gender: 'male', age: 34,
@@ -496,7 +557,6 @@ Game.NPC = (function () {
       playerRelation: 2, location: 'ashford'
     });
 
-    // Ashford specialist trades
     createNPC({
       name: { first: 'Vera', last: 'Needle', full: 'Vera Needle' },
       job: 'tailor', gender: 'female', age: 31,
@@ -538,7 +598,6 @@ Game.NPC = (function () {
       faction: 'civilian', personality: 'brave', location: 'ashford'
     });
 
-    // Town merchants
     for (var i = 0; i < 3; i++) {
       createNPC({
         job: 'merchant', age: U.randInt(25, 55),
@@ -556,7 +615,6 @@ Game.NPC = (function () {
       });
     }
 
-    // Town commoners
     for (var i = 0; i < 8; i++) {
       var hx = [114, 121, 114, 135, 141, 135, 121, 141][i];
       var hy = [114, 114, 119, 135, 135, 119, 135, 121][i];
@@ -571,7 +629,6 @@ Game.NPC = (function () {
 
     // === MILLHAVEN VILLAGE ===
     var mhx = 66, mhy = 190;
-    // Village elder
     createNPC({
       name: { first: 'Edmund', last: 'Ashford', full: 'Edmund Ashford' },
       job: 'villager', gender: 'male', age: 62,
@@ -582,7 +639,6 @@ Game.NPC = (function () {
       playerRelation: 10, location: 'millhaven'
     });
 
-    // Farmers
     for (var i = 0; i < 3; i++) {
       createNPC({
         job: 'farmer', age: U.randInt(20, 50),
@@ -593,7 +649,6 @@ Game.NPC = (function () {
       });
     }
 
-    // Village shop keeper
     createNPC({
       name: { first: 'Maren', last: 'Cooper', full: 'Maren Cooper' },
       job: 'merchant', gender: 'female', age: 34,
@@ -610,7 +665,6 @@ Game.NPC = (function () {
       ]
     });
 
-    // Villagers and specialist jobs
     createNPC({
       name: { first: 'Sera', last: 'Willow', full: 'Sera Willow' },
       job: 'healer', gender: 'female', age: 29,
@@ -647,7 +701,6 @@ Game.NPC = (function () {
 
     // === THORNFIELD VILLAGE ===
     var tfx = 66, tfy = 64;
-    // Woodcutter
     createNPC({
       name: { first: 'Henrik', last: 'Sawyer', full: 'Henrik Sawyer' },
       job: 'woodcutter', gender: 'male', age: 35,
@@ -657,7 +710,6 @@ Game.NPC = (function () {
       faction: 'thornfield', personality: 'brave', location: 'thornfield'
     });
 
-    // Village elder
     createNPC({
       name: { first: 'Oswin', last: 'Thatcher', full: 'Oswin Thatcher' },
       job: 'villager', gender: 'male', age: 58,
@@ -668,7 +720,6 @@ Game.NPC = (function () {
       playerRelation: 0, location: 'thornfield'
     });
 
-    // Thornfield villagers
     createNPC({
       name: { first: 'Dain', last: 'Rowe', full: 'Dain Rowe' },
       job: 'hunter', gender: 'male', age: 31,
@@ -693,7 +744,6 @@ Game.NPC = (function () {
       faction: 'thornfield', location: 'thornfield'
     });
 
-    // Thornfield shop
     createNPC({
       job: 'merchant', age: U.randInt(25, 45),
       x: (tfx + 6) * TS, y: (tfy + 1) * TS,
@@ -709,7 +759,6 @@ Game.NPC = (function () {
 
     // === BANDITS ===
     var bx = 200, by = 80;
-    // Bandit leader
     createNPC({
       name: { first: 'Lothar', last: 'Voss', full: 'Lothar Voss' },
       job: 'bandit', gender: 'male', age: 40,
@@ -735,13 +784,13 @@ Game.NPC = (function () {
       });
     }
 
-    // === WANDERING TRADERS (travel between settlements) ===
+    // === WANDERING TRADERS ===
     createNPC({
       name: { first: 'Ingram', last: 'Brennan', full: 'Ingram Brennan' },
       job: 'merchant', gender: 'male', age: 42,
       x: 90 * TS, y: 160 * TS,
-      home: { x: 66 * TS, y: 190 * TS },   // Millhaven
-      work: { x: 128 * TS, y: 128 * TS },   // Ashford market
+      home: { x: 66 * TS, y: 190 * TS },
+      work: { x: 128 * TS, y: 128 * TS },
       faction: 'civilian', personality: 'friendly',
       speed: 55, playerRelation: 0, location: 'wilderness',
       inventory: [
@@ -755,8 +804,8 @@ Game.NPC = (function () {
       name: { first: 'Petra', last: 'Lang', full: 'Petra Lang' },
       job: 'merchant', gender: 'female', age: 35,
       x: 80 * TS, y: 90 * TS,
-      home: { x: 66 * TS, y: 64 * TS },    // Thornfield
-      work: { x: 128 * TS, y: 128 * TS },   // Ashford market
+      home: { x: 66 * TS, y: 64 * TS },
+      work: { x: 128 * TS, y: 128 * TS },
       faction: 'civilian', personality: 'honest',
       speed: 50, playerRelation: 0, location: 'wilderness',
       inventory: [
@@ -768,8 +817,7 @@ Game.NPC = (function () {
     });
   }
 
-
-
+  // ─── Residential Assignment ────────────────────────────────────────────────
   function getScheduleTargetPos(npc) {
     if (npc.scheduledTarget === 'work') return npc.work;
     return npc.home;
@@ -791,8 +839,7 @@ Game.NPC = (function () {
     };
 
     function nearestSettlement(x, y) {
-      var best = 'ashford';
-      var bestD = Infinity;
+      var best = 'ashford', bestD = Infinity;
       for (var k in centers) {
         var c = centers[k];
         var d = U.distSq(x, y, c.x, c.y);
@@ -820,8 +867,7 @@ Game.NPC = (function () {
       var candidates = housesBySettlement[st] || [];
       if (candidates.length === 0) continue;
 
-      var best = null;
-      var bestScore = Infinity;
+      var best = null, bestScore = Infinity;
       for (var j = 0; j < candidates.length; j++) {
         var h = candidates[j];
         var cap = h.b.type === 'noble_house' ? 3 : 2;
@@ -831,13 +877,11 @@ Game.NPC = (function () {
         if (score < bestScore) { bestScore = score; best = h; }
       }
 
-      if (best) {
-        npc.home = { x: best.c.x, y: best.c.y };
-        best.occ++;
-      }
+      if (best) { npc.home = { x: best.c.x, y: best.c.y }; best.occ++; }
     }
   }
 
+  // ─── Main Update Loop ──────────────────────────────────────────────────────
   function update(dt) {
     var px = Game.Player.getState().x;
     var py = Game.Player.getState().y;
@@ -855,13 +899,10 @@ Game.NPC = (function () {
 
       var distToPlayer = U.dist(npc.x, npc.y, px, py);
 
-      // Only do full AI for nearby NPCs
       if (distToPlayer < NPC_UPDATE_RANGE) {
         updateNPCAI(npc, dt, hour, px, py, distToPlayer);
       } else if (distToPlayer < NPC_UPDATE_RANGE * 3) {
-        // Simplified update: just handle schedule
         updateSchedule(npc, hour);
-        // Teleport to scheduled position slowly
         if (npc.scheduledState === STATE.SLEEP) {
           npc.x = U.lerp(npc.x, npc.home.x, 0.01);
           npc.y = U.lerp(npc.y, npc.home.y, 0.01);
@@ -880,31 +921,57 @@ Game.NPC = (function () {
           npc.health = 0;
           npc.alive = false;
           npc.state = STATE.DEAD;
+          // Trigger mourning in nearby NPCs
+          triggerMourningNearby(npc);
         }
       }
 
-      // Bark timer
+      // Timers
       if (npc.barkTimer > 0) npc.barkTimer -= dt;
       if (npc.speechTimer > 0) npc.speechTimer -= dt;
-
-      // Attack cooldown
       if (npc.attackTimer > 0) npc.attackTimer -= dt;
       if (npc.hitCooldown > 0) npc.hitCooldown -= dt;
+      if (npc.emotionTimer > 0) {
+        npc.emotionTimer -= dt;
+        if (npc.emotionTimer <= 0) { npc.emotion = 'neutral'; npc.emotionIntensity = 0; }
+      }
+      if (npc.panicSpreadCooldown > 0) npc.panicSpreadCooldown -= dt;
     }
   }
 
+  function triggerMourningNearby(deadNpc) {
+    var nearby = spatialHash.query(deadNpc.x, deadNpc.y, 150);
+    for (var i = 0; i < nearby.length; i++) {
+      var n = nearby[i];
+      if (!n.alive || n.state === STATE.FIGHT) continue;
+      // Check if they have a relationship with the dead NPC
+      var hasRelation = n.relationships && n.relationships.some(function (r) { return r.withId === deadNpc.id && r.affinity > 0; });
+      if (hasRelation || U.rng() < 0.2) {
+        setEmotion(n, 'scared', 0.7, 30);
+        if (n.state !== STATE.FLEE) {
+          n.state = STATE.MOURN;
+          n.mourningTimer = 8 + U.rng() * 6;
+          if (n.barkTimer <= 0) {
+            setBark(n, U.pick([
+              deadNpc.name.first + '! No!',
+              'Help! Someone has been killed!',
+              'Gods, no... not like this.',
+              'Murder! Guards!'
+            ]));
+          }
+        }
+      }
+    }
+  }
+
+  // ─── Schedule Logic ────────────────────────────────────────────────────────
   function updateSchedule(npc, hour) {
     var job = JOBS[npc.job];
     if (!job) return;
     var sched = job.schedule;
     for (var i = 0; i < sched.length; i++) {
       var s = sched[i];
-      var inRange;
-      if (s.start < s.end) {
-        inRange = hour >= s.start && hour < s.end;
-      } else {
-        inRange = hour >= s.start || hour < s.end;
-      }
+      var inRange = s.start < s.end ? (hour >= s.start && hour < s.end) : (hour >= s.start || hour < s.end);
       if (inRange) {
         npc.scheduledState = s.state;
         npc.scheduledTarget = s.target || (s.state === STATE.WORK || s.state === STATE.PATROL ? 'work' : 'home');
@@ -913,85 +980,263 @@ Game.NPC = (function () {
     }
   }
 
+  // ─── Core NPC AI ──────────────────────────────────────────────────────────
   function updateNPCAI(npc, dt, hour, px, py, distToPlayer) {
     updateSchedule(npc, hour);
 
-    // Override states for combat / alarm
-    if (npc.state === STATE.FIGHT) {
-      updateCombatAI(npc, dt, px, py);
-      return;
-    }
-    if (npc.state === STATE.FLEE) {
-      updateFleeAI(npc, dt, px, py);
-      return;
-    }
-    if (npc.state === STATE.INVESTIGATE) {
-      updateInvestigateAI(npc, dt, px, py);
-      return;
+    // === HIGH-PRIORITY OVERRIDES ===
+    if (npc.state === STATE.FIGHT) { updateCombatAI(npc, dt, px, py); return; }
+    if (npc.state === STATE.FLEE) { updateFleeAI(npc, dt, px, py); return; }
+    if (npc.state === STATE.PURSUE) { updatePursueAI(npc, dt, px, py); return; }
+    if (npc.state === STATE.WARN) { updateWarnAI(npc, dt, px, py, distToPlayer); return; }
+    if (npc.state === STATE.INVESTIGATE) { updateInvestigateAI(npc, dt, px, py); return; }
+    if (npc.state === STATE.SCARED) { updateScaredAI(npc, dt, px, py, distToPlayer); return; }
+    if (npc.state === STATE.MOURN) { updateMournAI(npc, dt); return; }
+
+    // === WEATHER-DRIVEN BEHAVIOR ===
+    var weather = Game.Ambient ? Game.Ambient.getWeather() : null;
+    if (weather && (weather.type === 'storm') && npc.job !== 'guard' && npc.faction !== 'bandits') {
+      // In a storm, non-guards head home
+      npc.scheduledState = STATE.SLEEP;
+    } else if (weather && weather.type === 'rain' && U.rng() < 0.002) {
+      // Rain: occasionally rush toward home
+      if (npc.scheduledState === STATE.WORK || npc.scheduledState === STATE.SOCIALIZE) {
+        if (npc.barkTimer <= 0) setBark(npc, U.pick(['This rain is miserable.', 'I am soaked through!', 'I need shelter.']));
+      }
     }
 
-    // Bandits: attack player on sight
+    // === BANDIT AGGRESSION ===
     if (npc.faction === 'bandits' && distToPlayer < 200 && npc.alive) {
       var pState = Game.Player.getState();
       if (pState.alive && npc.aggression > 0.5) {
         npc.state = STATE.FIGHT;
         npc.combatTarget = 'player';
-        setBark(npc, 'Hah! Your coin or your life!');
+        setBark(npc, U.pick(['Hah! Your coin or your life!', 'Stand and deliver!', 'Another easy mark!', 'Empty your pockets!']));
         return;
       }
     }
 
-    // Guards: check for crimes / suspicious behavior / react to social class
-    if (npc.job === 'guard' && distToPlayer < 180) {
+    // === GUARD AI - TIERED ESCALATION ===
+    if (npc.job === 'guard' && npc.alive) {
       var pState = Game.Player.getState();
-      if (pState.bounty > 0) {
-        npc.state = STATE.FIGHT;
-        npc.combatTarget = 'player';
-        setBark(npc, 'Halt! You are wanted for crimes!');
-        return;
-      }
-      if (Game.World.isRestricted(Math.floor(px / TS), Math.floor(py / TS)) && Game.Player.getApparentClass() !== 'noble') {
-        setBark(npc, 'You do not belong here. Move along.');
-      }
-      // Salute/acknowledge nobles passing by
-      var nearbyNobility = spatialHash.query(npc.x, npc.y, 80);
-      for (var ni = 0; ni < nearbyNobility.length; ni++) {
-        var nn = nearbyNobility[ni];
-        if ((nn.job === 'noble' || nn.job === 'king') && nn.alive && npc.barkTimer <= 0 && U.rng() < 0.01) {
-          if (nn.x < npc.x) npc.facing = 'W'; else npc.facing = 'E';
-          setBark(npc, nn.job === 'king' ? 'Your Majesty.' : 'My lord.');
-          break;
+      var bounty = pState.bounty;
+      var tier = Game.Law.getGuardAlertTier(bounty);
+      var alertState = Game.Law.getAlertState ? Game.Law.getAlertState() : { level: 0 };
+
+      if (tier === 0) {
+        // Normal patrol - check restricted areas and social context
+        if (distToPlayer < 180) {
+          if (Game.World.isRestricted && Game.World.isRestricted(Math.floor(px / TS), Math.floor(py / TS)) &&
+              Game.Player.getApparentClass() !== 'noble') {
+            if (npc.barkTimer <= 0) setBark(npc, 'You do not belong here. Move along.');
+          }
+          // Guards acknowledge nobles
+          var nearbyNobility = spatialHash.query(npc.x, npc.y, 80);
+          for (var ni = 0; ni < nearbyNobility.length; ni++) {
+            var nn = nearbyNobility[ni];
+            if ((nn.job === 'noble' || nn.job === 'king') && nn.alive && npc.barkTimer <= 0 && U.rng() < 0.01) {
+              npc.facing = nn.x < npc.x ? 'W' : 'E';
+              setBark(npc, nn.job === 'king' ? 'Your Majesty.' : 'My lord.');
+              break;
+            }
+          }
+          // If global alert is elevated, guards scan more
+          if (alertState.level >= 1 && distToPlayer < 120 && npc.barkTimer <= 0 && U.rng() < 0.005) {
+            setBark(npc, U.pick(['Seen anything suspicious?', 'Stay alert.', 'On guard. There was trouble earlier.']));
+          }
+        }
+      } else if (tier === 1) {
+        // Minor offense: warn and monitor
+        if (distToPlayer < 220) {
+          npc.lastKnownPlayerX = px;
+          npc.lastKnownPlayerY = py;
+          if (npc.state !== STATE.WARN) {
+            npc.state = STATE.WARN;
+            npc.warnTimer = 10;
+            npc.alertIcon = '!';
+            npc.alertIconTimer = 3;
+            setBark(npc, Game.Law.getWarnCallout());
+          }
+          return;
+        }
+      } else if (tier === 2) {
+        // Moderate offense: arrest demand
+        npc.lastKnownPlayerX = px;
+        npc.lastKnownPlayerY = py;
+        if (distToPlayer < 280) {
+          if (!npc.arrestDemandActive) {
+            npc.arrestDemandActive = true;
+            npc.arrestDemandTimer = 6;
+            npc.alertIcon = '!';
+            npc.alertIconTimer = 4;
+            setBark(npc, Game.Law.getArrestCallout());
+            callGuardBackup(npc, false);
+          }
+          // Move toward player to make demand
+          if (distToPlayer > 60) {
+            moveToward(npc, px, py, dt, 1.1);
+          } else {
+            // Close enough - wait for surrender or escalate
+            npc.vx = 0; npc.vy = 0;
+            npc.facing = U.dirFromAngle(U.angle(npc.x, npc.y, px, py));
+            if (npc.arrestDemandTimer > 0) {
+              npc.arrestDemandTimer -= dt;
+              if (npc.barkTimer <= 0 && npc.arrestDemandTimer > 0) {
+                setBark(npc, U.pick([
+                  'Do not make this harder than it needs to be.',
+                  'Last chance. Come with me.',
+                  'Surrender. Now.',
+                  'You are surrounded. Give up.'
+                ]));
+              }
+            } else {
+              // Timer expired - escalate to combat
+              npc.arrestDemandActive = false;
+              npc.state = STATE.FIGHT;
+              npc.combatTarget = 'player';
+              setBark(npc, U.pick(['So be it! Take them!', 'Resist arrest, do you? Then fight!', 'Have it your way!']));
+            }
+          }
+          return;
+        } else if (distToPlayer < 500) {
+          // Player is running - pursue
+          npc.state = STATE.PURSUE;
+          npc.lastKnownPlayerX = px;
+          npc.lastKnownPlayerY = py;
+          npc.pursuitTimer = 30;
+          setBark(npc, U.pick(['Stop! You cannot run from the law!', 'Guards! After them!', 'Halt, criminal!']));
+          callGuardBackup(npc, false);
+          return;
+        }
+      } else {
+        // tier 3: kill on sight
+        if (distToPlayer < 350) {
+          npc.state = STATE.FIGHT;
+          npc.combatTarget = 'player';
+          npc.arrestDemandActive = false;
+          setBark(npc, Game.Law.getKosCallout());
+          callGuardBackup(npc, true);
+          return;
+        } else if (distToPlayer < 600) {
+          // Pursue KOS target
+          npc.state = STATE.PURSUE;
+          npc.lastKnownPlayerX = px;
+          npc.lastKnownPlayerY = py;
+          npc.pursuitTimer = 45;
+          return;
         }
       }
     }
 
-    // NPCs pause and look at player when greeting
+    // === PANIC SPREADING (scared emotion contagion) ===
+    if (npc.emotion !== 'scared' && npc.panicSpreadCooldown <= 0) {
+      var nearby = spatialHash.query(npc.x, npc.y, 80);
+      for (var ni = 0; ni < nearby.length; ni++) {
+        var n = nearby[ni];
+        if (n.id === npc.id || !n.alive) continue;
+        if ((n.state === STATE.FLEE || n.emotion === 'scared') && n.emotionIntensity > 0.5) {
+          if (npc.personality !== 'brave' && npc.personality !== 'hostile' && U.rng() < 0.15) {
+            setEmotion(npc, 'scared', n.emotionIntensity * 0.7, 15);
+            npc.panicSpreadCooldown = 5;
+            if (npc.barkTimer <= 0) {
+              setBark(npc, U.pick(['What is happening?!', 'Run!', 'Something is wrong!', 'Get away!']));
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // === GREETING & AWARENESS ===
+    if (npc.greetCooldown > 0) npc.greetCooldown -= dt;
+    if (npc.alertIconTimer > 0) npc.alertIconTimer -= dt;
+    else npc.alertIcon = '';
+
+    var wasClose = npc.lastPlayerDist < 100;
+    var isClose = distToPlayer < 100;
+    npc.lastPlayerDist = distToPlayer;
+
+    if (isClose && !wasClose && npc.barkTimer <= 0 && npc.greetCooldown <= 0) {
+      npc.timesMetPlayer++;
+      npc.greetedPlayer = true;
+      npc.greetCooldown = 30;
+
+      var greeting;
+      // Emotion-affected greetings
+      if (npc.emotion === 'scared') {
+        greeting = U.pick(['Please, just leave me alone.', 'Stay back!', 'I have nothing. Please.']);
+      } else if (npc.emotion === 'angry') {
+        greeting = U.pick(['What do YOU want?', 'Not now.', 'Keep your distance.']);
+      } else if (npc.timesMetPlayer === 1) {
+        greeting = U.pick(['Hm? I have not seen you before.', 'A new face around here.', 'Who might you be?']);
+        npc.alertIcon = '?'; npc.alertIconTimer = 2;
+      } else if (npc.timesMetPlayer < 4) {
+        greeting = U.pick(['You again.', 'Back so soon?', 'I remember you.']);
+      } else if (npc.playerRelation > 15) {
+        greeting = U.pick(['Ah, my friend!', 'Welcome back!', 'Good to see you again.']);
+      } else if (npc.playerRelation < -15) {
+        greeting = U.pick(['Not you again.', 'What do you want?', 'Keep walking.']);
+        npc.alertIcon = '!'; npc.alertIconTimer = 1.5;
+      } else {
+        greeting = U.pick(['Greetings.', 'Hello.', 'Day to you.']);
+      }
+
+      // Job-specific first meeting
+      if (npc.timesMetPlayer === 1) {
+        if (npc.job === 'guard') greeting = 'Halt. State your business.';
+        else if (npc.job === 'merchant') greeting = 'A customer? Come, have a look!';
+        else if (npc.job === 'tavernKeeper') greeting = 'Welcome, traveler. Hungry?';
+        else if (npc.job === 'carpenter') greeting = 'Mind the shavings - I am shaping beams.';
+        else if (npc.job === 'mason') greeting = 'Watch your step, stone dust everywhere.';
+        else if (npc.job === 'fisherman') greeting = 'Tide waits for no one.';
+        else if (npc.job === 'baker') greeting = 'Fresh loaves are nearly ready.';
+        else if (npc.job === 'tailor') greeting = 'Stand still and I can size you up.';
+        else if (npc.job === 'butcher') greeting = 'Best cuts in town, if you have coin.';
+        else if (npc.job === 'cooper') greeting = 'A leaky barrel is wasted ale.';
+        else if (npc.job === 'potter') greeting = 'Clay tells you what it wants to become.';
+      }
+
+      // Hearsay reaction: NPC heard about player's crimes
+      if (npc.timesMetPlayer > 1) {
+        var hasHeardBadThings = npc.gossipMemory && npc.gossipMemory.some(function (m) { return m.crime && m.severity >= 4; });
+        var hasHeardGoodThings = npc.memory && npc.memory.some(function (m) { return m.type === 'playerHelped'; });
+        if (hasHeardBadThings && npc.job !== 'guard') {
+          greeting = U.pick(['I have heard things about you. Be careful.', 'Word travels in this town. I know what you did.', 'They say you are dangerous. Are you?']);
+          npc.alertIcon = '!'; npc.alertIconTimer = 2;
+        } else if (hasHeardGoodThings) {
+          greeting = U.pick(['People speak well of you.', 'You have a good name here.', 'I heard you helped someone. That is rare.']);
+        }
+      }
+
+      setBark(npc, greeting);
+      var lookAng = U.angle(npc.x, npc.y, px, py);
+      npc.facing = U.dirFromAngle(lookAng);
+      npc.wanderTimer = Math.max(npc.wanderTimer, 3);
+    }
+
     if (npc.barkTimer > 2.5 && distToPlayer < 100) {
-      var lookAngle = U.angle(npc.x, npc.y, px, py);
-      npc.facing = U.dirFromAngle(lookAngle);
+      npc.facing = U.dirFromAngle(U.angle(npc.x, npc.y, px, py));
       npc.wanderTimer = Math.max(npc.wanderTimer, 2);
     }
 
-    // Follow schedule
+    // === SCHEDULE-DRIVEN BEHAVIOR ===
     switch (npc.scheduledState) {
       case STATE.SLEEP:
         npc.state = STATE.SLEEP;
         moveToward(npc, npc.home.x, npc.home.y, dt, 0.5);
         break;
+
       case STATE.WORK:
         npc.state = STATE.WORK;
         var distToWork = U.distSq(npc.x, npc.y, npc.work.x, npc.work.y);
 
-        // Travel to work spot first
         if (distToWork >= 500) {
           npc.workTaskTimer = 0;
           moveToward(npc, npc.work.x, npc.work.y, dt, 1.0);
         } else {
-          // Decay timers
           if (npc.workTaskCooldown > 0) npc.workTaskCooldown -= dt;
           if (npc.workTaskTimer > 0) npc.workTaskTimer -= dt;
 
-          // Start a focused stationary task (so tool animations can play)
           if (npc.workTaskTimer <= 0 && npc.workTaskCooldown <= 0) {
             npc.workAnchorX = npc.work.x + U.randFloat(-28, 28);
             npc.workAnchorY = npc.work.y + U.randFloat(-28, 28);
@@ -1001,19 +1246,13 @@ Game.NPC = (function () {
           }
 
           if (npc.workTaskTimer > 0) {
-            // Move to anchor if needed, otherwise stand and perform task
             if (U.distSq(npc.x, npc.y, npc.workAnchorX, npc.workAnchorY) > 64) {
               moveToward(npc, npc.workAnchorX, npc.workAnchorY, dt, 0.5);
             } else {
-              npc.vx = 0;
-              npc.vy = 0;
-              // subtle facing changes to avoid frozen look
-              if (U.rng() < 0.02) {
-                npc.facing = U.pick(['N', 'S', 'E', 'W']);
-              }
+              npc.vx = 0; npc.vy = 0;
+              if (U.rng() < 0.02) npc.facing = U.pick(['N', 'S', 'E', 'W']);
             }
           } else {
-            // Between tasks: short movement around workshop
             if (npc.wanderTimer <= 0) {
               npc.targetX = npc.work.x + U.randFloat(-40, 40);
               npc.targetY = npc.work.y + U.randFloat(-40, 40);
@@ -1025,7 +1264,6 @@ Game.NPC = (function () {
             }
           }
 
-          // Work barks (context-aware)
           if (npc.barkTimer <= 0 && U.rng() < 0.008) {
             var ctxBark = Game.Ambient ? Game.Ambient.getContextBark(npc, 'work') : null;
             setBark(npc, ctxBark || U.pick(getWorkBarks(npc.job)));
@@ -1040,32 +1278,82 @@ Game.NPC = (function () {
           moveToward(npc, pp.x, pp.y, dt, 1.0);
           if (U.distSq(npc.x, npc.y, pp.x, pp.y) < 400) {
             npc.patrolIndex = (npc.patrolIndex + 1) % npc.patrolPoints.length;
+            // Occasional patrol barks
+            if (npc.barkTimer <= 0 && U.rng() < 0.1) {
+              setBark(npc, U.pick(getWorkBarks('guard')));
+            }
           }
         }
         break;
+
       case STATE.SOCIALIZE:
         npc.state = STATE.SOCIALIZE;
-        // Move to a social spot (market or tavern if in town)
         var socX, socY;
         if (npc.currentLocation === 'ashford') {
-          if (hour >= 18) {
-            socX = 116 * TS; socY = 128 * TS; // tavern area
-          } else {
-            socX = 128 * TS; socY = 128 * TS; // market
-          }
+          if (hour >= 18) { socX = 116 * TS; socY = 128 * TS; }
+          else { socX = 128 * TS; socY = 128 * TS; }
         } else {
           socX = npc.home.x + U.randFloat(-64, 64);
           socY = npc.home.y + U.randFloat(-64, 64);
         }
-        moveToward(npc, socX, socY, dt, 0.6);
-        // Social barks (context-aware)
+        // Emotional state affects social walk speed
+        var socSpeed = npc.emotion === 'scared' ? 0.3 : (npc.emotion === 'happy' ? 0.7 : 0.6);
+        moveToward(npc, socX, socY, dt, socSpeed);
+
         if (npc.barkTimer <= 0 && U.rng() < 0.004) {
-          var ctxBark = Game.Ambient ? Game.Ambient.getContextBark(npc, 'social') : null;
-          setBark(npc, ctxBark || U.pick(getSocialBarks(npc)));
+          var ctxBark2 = Game.Ambient ? Game.Ambient.getContextBark(npc, 'social') : null;
+          setBark(npc, ctxBark2 || U.pick(getSocialBarks(npc)));
+        }
+
+        // NPCs in social state occasionally share gossip
+        if (U.rng() < 0.001 && npc.gossipMemory && npc.gossipMemory.length > 0) {
+          var gossipTarget = spatialHash.query(npc.x, npc.y, 60);
+          for (var gi = 0; gi < gossipTarget.length; gi++) {
+            var gt = gossipTarget[gi];
+            if (gt.id !== npc.id && gt.alive && gt.state === STATE.SOCIALIZE) {
+              // Share a random gossip memory
+              var gm = npc.gossipMemory[Math.floor(U.rng() * npc.gossipMemory.length)];
+              addMemory(gt, { type: 'heardGossip', content: gm, time: Game.time || 0 });
+              break;
+            }
+          }
         }
         break;
+
       case STATE.IDLE:
         npc.state = STATE.IDLE;
+        updateIdleActivity(npc, dt, hour);
+        break;
+
+      case STATE.TRAVEL:
+        npc.state = STATE.TRAVEL;
+        var travelTarget = getScheduleTargetPos(npc);
+        moveToward(npc, travelTarget.x, travelTarget.y, dt, 1.0);
+        break;
+    }
+
+    // Activity anim
+    if (npc.state === STATE.WORK) npc.activityAnim += dt * 3;
+
+    // Ambient awareness barks
+    if (npc.barkTimer <= 0 && distToPlayer < 120 && !isClose && U.rng() < 0.002) {
+      var ctxBark3 = Game.Ambient ? Game.Ambient.getContextBark(npc, 'playerNear') : null;
+      setBark(npc, ctxBark3 || U.pick(getAwarenessBarks(npc, hour)));
+    }
+  }
+
+  // ─── Idle Activity System ─────────────────────────────────────────────────
+  function updateIdleActivity(npc, dt, hour) {
+    npc.idleActivityTimer -= dt;
+    if (npc.idleActivityTimer <= 0) {
+      var activities = ['stand', 'look_around', 'wander', 'sit', 'stretch'];
+      if (hour >= 18) activities.push('look_around', 'wander'); // restless at night
+      npc.idleActivity = U.pick(activities);
+      npc.idleActivityTimer = U.randFloat(3, 9);
+    }
+
+    switch (npc.idleActivity) {
+      case 'wander':
         if (npc.wanderTimer <= 0) {
           npc.targetX = npc.home.x + U.randFloat(-64, 64);
           npc.targetY = npc.home.y + U.randFloat(-64, 64);
@@ -1076,100 +1364,185 @@ Game.NPC = (function () {
           if (npc.hasTarget) moveToward(npc, npc.targetX, npc.targetY, dt, 0.4);
         }
         break;
-      case STATE.TRAVEL:
-        npc.state = STATE.TRAVEL;
-        var travelTarget = getScheduleTargetPos(npc);
-        moveToward(npc, travelTarget.x, travelTarget.y, dt, 1.0);
+      case 'look_around':
+        npc.vx = 0; npc.vy = 0;
+        if (U.rng() < 0.03) npc.facing = U.pick(['N', 'S', 'E', 'W']);
+        break;
+      case 'stretch':
+        npc.vx = 0; npc.vy = 0;
+        // Visible through activityAnim but just stay put
+        break;
+      case 'sit':
+        npc.vx = 0; npc.vy = 0;
+        break;
+      default: // stand
+        npc.vx = 0; npc.vy = 0;
         break;
     }
 
-    // === GREETING MEMORY & ALERT SYSTEM ===
-    if (npc.greetCooldown > 0) npc.greetCooldown -= dt;
-    if (npc.alertIconTimer > 0) npc.alertIconTimer -= dt;
-    else npc.alertIcon = '';
-
-    // Track player approach/leave
-    var wasClose = npc.lastPlayerDist < 100;
-    var isClose = distToPlayer < 100;
-    npc.lastPlayerDist = distToPlayer;
-
-    // Player just entered NPC awareness range
-    if (isClose && !wasClose && npc.barkTimer <= 0 && npc.greetCooldown <= 0) {
-      npc.timesMetPlayer++;
-      npc.greetedPlayer = true;
-      npc.greetCooldown = 30; // don't greet again for 30s
-
-      var greeting;
-      if (npc.timesMetPlayer === 1) {
-        // First meeting ever
-        greeting = U.pick(['Hm? I have not seen you before.', 'A new face around here.', 'Who might you be?']);
-        npc.alertIcon = '?';
-        npc.alertIconTimer = 2;
-      } else if (npc.timesMetPlayer < 4) {
-        greeting = U.pick(['You again.', 'Back so soon?', 'I remember you.']);
-      } else if (npc.playerRelation > 15) {
-        greeting = U.pick(['Ah, my friend!', 'Welcome back!', 'Good to see you, ' + (Game.Player.getState().socialClass === 'peasant' ? 'friend' : 'sir') + '.']);
-      } else if (npc.playerRelation < -15) {
-        greeting = U.pick(['Not you again.', 'What do you want?', 'Keep walking.']);
-        npc.alertIcon = '!';
-        npc.alertIconTimer = 1.5;
-      } else {
-        greeting = U.pick(['Greetings.', 'Hello.', 'Day to you.']);
-      }
-
-      // Job-specific first greeting
-      if (npc.timesMetPlayer === 1) {
-        if (npc.job === 'guard') greeting = 'Halt. State your business here.';
-        else if (npc.job === 'merchant') greeting = 'A customer? Come, have a look!';
-        else if (npc.job === 'tavernKeeper') greeting = 'Welcome, traveler. Hungry?';
-        else if (npc.job === 'carpenter') greeting = 'Mind the shavings - I am shaping beams.';
-        else if (npc.job === 'mason') greeting = 'Watch your step, stone dust everywhere.';
-        else if (npc.job === 'fisherman') greeting = 'Tide waits for no one.';
-        else if (npc.job === 'baker') greeting = 'Fresh loaves are nearly ready.';
-        else if (npc.job === 'tailor') greeting = 'Stand still and I can size you up.';
-        else if (npc.job === 'butcher') greeting = 'Best cuts in town, if you have coin.';
-        else if (npc.job === 'cooper') greeting = 'A leaky barrel is wasted ale.';
-        else if (npc.job === 'potter') greeting = 'Clay tells you what it wants to become.';
-      }
-
-      setBark(npc, greeting);
-
-      // Face the player
-      var lookAng = U.angle(npc.x, npc.y, px, py);
-      npc.facing = U.dirFromAngle(lookAng);
-      npc.wanderTimer = Math.max(npc.wanderTimer, 3);
-    }
-
-    // Activity animation counter (used by renderer for tool-use)
-    if (npc.state === STATE.WORK) npc.activityAnim += dt * 3;
-
-    // Ambient awareness barks (now rich and contextual) - less frequent since greetings handle proximity
-    if (npc.barkTimer <= 0 && distToPlayer < 120 && !isClose && U.rng() < 0.002) {
-      var ctxBark = Game.Ambient ? Game.Ambient.getContextBark(npc, 'playerNear') : null;
-      setBark(npc, ctxBark || U.pick(getAwarenessBarks(npc, hour)));
+    // Idle barks
+    if (npc.barkTimer <= 0 && U.rng() < 0.003) {
+      setBark(npc, U.pick(getSocialBarks(npc)));
     }
   }
 
+  // ─── Special State AIs ─────────────────────────────────────────────────────
+
+  function updateWarnAI(npc, dt, px, py, distToPlayer) {
+    // Guard verbally warning player - watches and waits
+    npc.warnTimer -= dt;
+    npc.facing = U.dirFromAngle(U.angle(npc.x, npc.y, px, py));
+    npc.vx = 0; npc.vy = 0;
+
+    if (Game.Player.getState().bounty <= 0) {
+      // Bounty cleared while being warned
+      npc.state = STATE.IDLE;
+      npc.warnTimer = 0;
+      setBark(npc, U.pick(['Glad we sorted that.', 'Stay out of trouble.', 'Move along.']));
+      return;
+    }
+
+    var tier = Game.Law.getGuardAlertTier(Game.Player.getState().bounty);
+    if (tier >= 2) {
+      // Escalate
+      npc.state = STATE.FIGHT;
+      npc.arrestDemandActive = true;
+      npc.arrestDemandTimer = 5;
+      npc.combatTarget = 'player';
+      setBark(npc, Game.Law.getArrestCallout());
+      return;
+    }
+
+    if (npc.warnTimer <= 0 || distToPlayer > 280) {
+      // Warning expired - back to patrol but remain suspicious
+      npc.state = STATE.PATROL;
+      npc.warnTimer = 0;
+      if (npc.barkTimer <= 0) setBark(npc, 'I am watching you.');
+    }
+  }
+
+  function updatePursueAI(npc, dt, px, py) {
+    npc.pursuitTimer -= dt;
+    npc.lastKnownPlayerX = px;
+    npc.lastKnownPlayerY = py;
+    var dist = U.dist(npc.x, npc.y, px, py);
+
+    if (npc.pursuitTimer <= 0 && dist > 400) {
+      // Lost the player
+      npc.state = STATE.INVESTIGATE;
+      npc.targetX = npc.lastKnownPlayerX;
+      npc.targetY = npc.lastKnownPlayerY;
+      npc.hasTarget = true;
+      npc.arrestDemandActive = false;
+      setBark(npc, U.pick(['Where did they go?', 'I lost them!', 'They cannot have gone far.', 'Search the area!']));
+      return;
+    }
+
+    if (dist < 60) {
+      // Caught up
+      if (npc.job === 'guard') {
+        var tier = Game.Law.getGuardAlertTier(Game.Player.getState().bounty);
+        if (tier >= 3) {
+          npc.state = STATE.FIGHT;
+          npc.combatTarget = 'player';
+          setBark(npc, Game.Law.getKosCallout());
+        } else {
+          npc.state = STATE.FIGHT;
+          npc.combatTarget = 'player';
+          npc.arrestDemandActive = true;
+          npc.arrestDemandTimer = 5;
+          setBark(npc, Game.Law.getArrestCallout());
+        }
+      } else {
+        npc.state = STATE.FIGHT;
+        npc.combatTarget = 'player';
+      }
+      return;
+    }
+
+    // Chase - guards run faster than normal speed
+    moveToward(npc, px, py, dt, npc.job === 'guard' ? 1.4 : 1.2);
+
+    if (npc.barkTimer <= 0 && U.rng() < 0.005) {
+      setBark(npc, U.pick(['Stop running!', 'You cannot outrun the law!', 'Guards! Intercept!', 'Block the road!']));
+    }
+  }
+
+  function updateScaredAI(npc, dt, px, py, distToPlayer) {
+    // NPC is cowering/panicking - slow, erratic movement
+    npc.emotionTimer -= dt;
+    if (npc.emotionTimer <= 0) {
+      npc.emotion = 'neutral';
+      npc.state = STATE.IDLE;
+      return;
+    }
+
+    // Move away from whatever scared them
+    if (distToPlayer < 120) {
+      var fleeDist = 80;
+      var ang = U.angle(px, py, npc.x, npc.y);
+      var fx = npc.x + Math.cos(ang) * fleeDist;
+      var fy = npc.y + Math.sin(ang) * fleeDist;
+      moveToward(npc, fx, fy, dt, 0.6);
+    } else {
+      npc.vx = 0; npc.vy = 0;
+    }
+
+    if (npc.barkTimer <= 0 && U.rng() < 0.01) {
+      setBark(npc, U.pick(['Please, no!', 'Stay away from me!', 'Help!', 'What is happening?!', 'Someone help!']));
+    }
+  }
+
+  function updateMournAI(npc, dt) {
+    npc.mourningTimer -= dt;
+    npc.vx = 0; npc.vy = 0;
+    if (U.rng() < 0.02) npc.facing = U.pick(['N', 'S', 'E', 'W']);
+    if (npc.barkTimer <= 0 && U.rng() < 0.008) {
+      setBark(npc, U.pick([
+        'This is terrible...', 'Who could do such a thing?', 'I cannot believe this.',
+        'We need the guards.', 'This town is not safe anymore.', 'May they rest in peace.'
+      ]));
+    }
+    if (npc.mourningTimer <= 0) {
+      npc.state = STATE.IDLE;
+      npc.mourningTimer = 0;
+    }
+  }
+
+  // ─── Combat AI ────────────────────────────────────────────────────────────
   function updateCombatAI(npc, dt, px, py) {
     var pState = Game.Player.getState();
     if (!pState.alive) {
       npc.state = STATE.IDLE;
       npc.combatTarget = null;
-      setBark(npc, U.pick(['That is done.', 'It is over.', 'Stay down.']));
+      npc._combatPhase = null;
+      npc.arrestDemandActive = false;
+      setBark(npc, U.pick(['That is done.', 'It is over.', 'Stay down.', 'Justice served.']));
       return;
     }
 
     var dist = U.dist(npc.x, npc.y, px, py);
 
-    // Give up if too far
-    if (dist > 500) {
-      npc.state = STATE.IDLE;
-      npc.combatTarget = null;
-      setBark(npc, 'Coward ran off.');
+    // Guard pursuing arrest: if player gets far, switch to pursue
+    if (npc.job === 'guard' && npc.arrestDemandActive && dist > 400) {
+      npc.state = STATE.PURSUE;
+      npc.lastKnownPlayerX = px;
+      npc.lastKnownPlayerY = py;
+      npc.pursuitTimer = 35;
       return;
     }
 
-    // Initialize combat sub-state if needed
+    // Give up if too far (bandits give up sooner)
+    var giveUpDist = npc.job === 'guard' ? 650 : 500;
+    if (dist > giveUpDist) {
+      npc.state = STATE.IDLE;
+      npc.combatTarget = null;
+      npc._combatPhase = null;
+      npc.arrestDemandActive = false;
+      setBark(npc, npc.job === 'guard' ? U.pick(['I will find you!', 'You cannot hide!', 'Coward ran off.']) : 'Coward ran off.');
+      return;
+    }
+
     if (!npc._combatPhase) npc._combatPhase = 'approach';
     if (!npc._circleDir) npc._circleDir = U.rng() < 0.5 ? 1 : -1;
     if (!npc._phaseTimer) npc._phaseTimer = 0;
@@ -1186,32 +1559,43 @@ Game.NPC = (function () {
       if (allies[ai].id !== npc.id && allies[ai].alive && allies[ai].state === STATE.FIGHT) allyCount++;
     }
 
-    // === TACTICAL PHASE MACHINE ===
-
-    // Flee if low HP (cowards flee earlier, brave fight to the end)
+    // === FLEE / GIVE UP THRESHOLD ===
     var fleeThreshold = npc.personality === 'cowardly' ? 0.4 : npc.personality === 'brave' ? 0.1 : 0.2;
     if (hpRatio < fleeThreshold && allyCount === 0) {
-      npc.state = STATE.FLEE;
-      npc.combatTarget = null;
-      npc._combatPhase = null;
-      setBark(npc, U.pick(['I yield!', 'Mercy!', 'I surrender!', 'Enough! I give up!']));
+      if (npc.job === 'guard' && npc.arrestDemandActive) {
+        // Wounded guard calls for backup before retreating
+        callGuardBackup(npc, false);
+        npc.state = STATE.PURSUE;
+        npc.pursuitTimer = 15;
+        setBark(npc, U.pick(['Fall back! Get help!', 'Wounded! Need support!', 'Get the captain!']));
+      } else {
+        npc.state = STATE.FLEE;
+        npc.combatTarget = null;
+        npc._combatPhase = null;
+        setBark(npc, U.pick(['I yield!', 'Mercy!', 'I surrender!', 'Enough!']));
+      }
       return;
     }
 
-    // Retreat to heal if hurt but not critical
     if (hpRatio < 0.5 && npc._combatPhase !== 'retreat' && U.rng() < 0.01) {
       npc._combatPhase = 'retreat';
       npc._phaseTimer = 1.5 + U.rng();
-      setBark(npc, U.pick(['Back off!', 'Need room...', 'Tch...']));
+      setBark(npc, U.pick(['Back off!', 'Need room...', 'Tch...', 'Stand your ground!']));
+    }
+
+    // Arrest demand during combat: guard gives player one more chance
+    if (npc.arrestDemandActive && npc.arrestDemandTimer > 0) {
+      npc.arrestDemandTimer -= dt;
+      if (npc.arrestDemandTimer <= 0) {
+        npc.arrestDemandActive = false;
+      }
     }
 
     switch (npc._combatPhase) {
       case 'approach':
-        // Close distance
         if (dist > 45) {
           moveToward(npc, px, py, dt, 1.2 + aggro * 0.3);
         } else {
-          // In range — decide next action
           npc._combatPhase = (U.rng() < 0.4 + aggro * 0.3) ? 'attack' : 'circle';
           npc._phaseTimer = 0.3 + U.rng() * 0.5;
         }
@@ -1219,42 +1603,30 @@ Game.NPC = (function () {
         break;
 
       case 'circle':
-        // Strafe around player to find an opening
         var circleAngle = angleToPlayer + Math.PI / 2 * npc._circleDir;
         var cx = px + Math.cos(circleAngle) * 50;
         var cy = py + Math.sin(circleAngle) * 50;
         moveToward(npc, cx, cy, dt, 0.8);
-        npc.blocking = U.rng() < 0.5; // guard while circling
+        npc.blocking = U.rng() < 0.5;
 
         if (npc._phaseTimer <= 0) {
-          // After circling, attack or keep circling
           if (U.rng() < 0.6 + aggro * 0.2) {
-            npc._combatPhase = 'attack';
-            npc._phaseTimer = 0.1;
+            npc._combatPhase = 'attack'; npc._phaseTimer = 0.1;
           } else {
-            npc._circleDir *= -1; // switch direction
+            npc._circleDir *= -1;
             npc._phaseTimer = 1 + U.rng() * 1.5;
           }
         }
-        // Dodge if player is attacking us
         if (isPlayerAttacking && dist < 50 && U.rng() < aggro * 0.4) {
-          npc._combatPhase = 'dodge';
-          npc._phaseTimer = 0.3;
+          npc._combatPhase = 'dodge'; npc._phaseTimer = 0.3;
         }
         break;
 
       case 'attack':
-        // Rush in and strike
-        if (dist > 38) {
-          moveToward(npc, px, py, dt, 1.6);
-          npc.blocking = false;
-        }
+        if (dist > 38) { moveToward(npc, px, py, dt, 1.6); npc.blocking = false; }
         if (dist < 42 && npc.attackTimer <= 0) {
-          // Don't attack into a block — feint sometimes
           if (isPlayerBlocking && U.rng() < 0.35) {
-            npc._combatPhase = 'feint';
-            npc._phaseTimer = 0.6;
-            break;
+            npc._combatPhase = 'feint'; npc._phaseTimer = 0.6; break;
           }
           var damage = npc.damage;
           var skillMod = 0.8 + U.rng() * 0.4;
@@ -1267,68 +1639,44 @@ Game.NPC = (function () {
             Game.Law.reportCrime('assault', npc, npc);
           }
 
-          // After attacking, back off or press advantage
-          if (U.rng() < 0.4) {
-            npc._combatPhase = 'retreat';
-            npc._phaseTimer = 0.5 + U.rng() * 0.5;
-          } else {
-            npc._combatPhase = 'circle';
-            npc._phaseTimer = 0.8 + U.rng();
-          }
+          if (U.rng() < 0.4) { npc._combatPhase = 'retreat'; npc._phaseTimer = 0.5 + U.rng() * 0.5; }
+          else { npc._combatPhase = 'circle'; npc._phaseTimer = 0.8 + U.rng(); }
         }
-        if (npc._phaseTimer <= 0) {
-          npc._combatPhase = 'circle';
-          npc._phaseTimer = 1;
-        }
+        if (npc._phaseTimer <= 0) { npc._combatPhase = 'circle'; npc._phaseTimer = 1; }
         break;
 
       case 'feint':
-        // Fake approach then pull back, wait for player to drop guard
         if (npc._phaseTimer > 0.3) {
           moveToward(npc, px, py, dt, 1.4);
         } else {
-          // Pull back
           var retreatAngle = angleToPlayer + Math.PI;
           moveToward(npc, npc.x + Math.cos(retreatAngle) * 30, npc.y + Math.sin(retreatAngle) * 30, dt, 1.0);
         }
         npc.blocking = false;
-        if (npc._phaseTimer <= 0) {
-          npc._combatPhase = 'attack'; // now actually strike
-          npc._phaseTimer = 0.3;
-        }
+        if (npc._phaseTimer <= 0) { npc._combatPhase = 'attack'; npc._phaseTimer = 0.3; }
         break;
 
       case 'dodge':
-        // Quick sidestep
         var dodgeAngle = angleToPlayer + (Math.PI / 2) * npc._circleDir;
         moveToward(npc, npc.x + Math.cos(dodgeAngle) * 60, npc.y + Math.sin(dodgeAngle) * 60, dt, 2.0);
         npc.blocking = false;
-        if (npc._phaseTimer <= 0) {
-          npc._combatPhase = 'attack';
-          npc._phaseTimer = 0.2;
-        }
+        if (npc._phaseTimer <= 0) { npc._combatPhase = 'attack'; npc._phaseTimer = 0.2; }
         break;
 
       case 'retreat':
-        // Back away while blocking
         var retAngle = angleToPlayer + Math.PI;
         moveToward(npc, npc.x + Math.cos(retAngle) * 80, npc.y + Math.sin(retAngle) * 80, dt, 0.9);
         npc.blocking = true;
-        if (npc._phaseTimer <= 0) {
-          npc._combatPhase = dist > 80 ? 'approach' : 'circle';
-          npc._phaseTimer = 1 + U.rng();
-        }
+        if (npc._phaseTimer <= 0) { npc._combatPhase = dist > 80 ? 'approach' : 'circle'; npc._phaseTimer = 1 + U.rng(); }
         break;
 
       default:
-        npc._combatPhase = 'approach';
-        npc._phaseTimer = 0;
+        npc._combatPhase = 'approach'; npc._phaseTimer = 0;
     }
 
-    // Group flanking: if allies present, try to position on opposite side
+    // Group flanking
     if (allyCount > 0 && npc._combatPhase !== 'dodge' && npc._combatPhase !== 'retreat') {
-      var avgAllyAngle = 0;
-      var counted = 0;
+      var avgAllyAngle = 0, counted = 0;
       for (var ai = 0; ai < allies.length; ai++) {
         var al = allies[ai];
         if (al.id !== npc.id && al.alive && al.state === STATE.FIGHT) {
@@ -1338,23 +1686,26 @@ Game.NPC = (function () {
       }
       if (counted > 0) {
         avgAllyAngle /= counted;
-        // Position on opposite side from allies
         var flankAngle = avgAllyAngle + Math.PI;
-        var idealX = px + Math.cos(flankAngle) * 45;
-        var idealY = py + Math.sin(flankAngle) * 45;
-        // Blend toward flanking position
-        npc.x += (idealX - npc.x) * dt * 0.8;
-        npc.y += (idealY - npc.y) * dt * 0.8;
+        npc.x += (px + Math.cos(flankAngle) * 45 - npc.x) * dt * 0.8;
+        npc.y += (py + Math.sin(flankAngle) * 45 - npc.y) * dt * 0.8;
       }
     }
 
     // Combat barks
     if (npc.barkTimer <= 0 && U.rng() < 0.003) {
-      var cBarks = npc.faction === 'bandits' ?
-        ['Your gold is mine!', 'Stand still!', 'You picked the wrong fight!', 'Ha!'] :
-        npc.job === 'guard' ?
-        ['Halt, criminal!', 'You will not escape!', 'In the name of the King!', 'Surrender!'] :
-        ['Leave me alone!', 'Help!', 'Stay back!', 'Why are you doing this?'];
+      var cBarks;
+      if (npc.faction === 'bandits') {
+        cBarks = ['Your gold is mine!', 'Stand still!', 'You picked the wrong fight!', 'Ha!', 'Die!'];
+      } else if (npc.job === 'guard') {
+        if (npc.arrestDemandActive) {
+          cBarks = ['Surrender!', 'Give yourself up!', 'Come quietly!', 'One last chance!'];
+        } else {
+          cBarks = ['In the name of the King!', 'You will not escape!', 'Take them down!', 'No mercy for criminals!'];
+        }
+      } else {
+        cBarks = ['Leave me alone!', 'Help!', 'Stay back!', 'Why are you doing this?'];
+      }
       setBark(npc, U.pick(cBarks));
     }
   }
@@ -1363,39 +1714,86 @@ Game.NPC = (function () {
     var angle = U.angle(px, py, npc.x, npc.y);
     var fleeX = npc.x + Math.cos(angle) * 200;
     var fleeY = npc.y + Math.sin(angle) * 200;
-    moveToward(npc, fleeX, fleeY, dt, 1.5);
+    var speedMod = npc.emotion === 'scared' ? 1.8 : 1.5;
+    moveToward(npc, fleeX, fleeY, dt, speedMod);
+
+    if (npc.barkTimer <= 0 && U.rng() < 0.01) {
+      setBark(npc, U.pick(['Run!', 'Get away!', 'Help!', 'Leave me alone!']));
+    }
+
+    // Spread panic to nearby fleeing NPCs
+    if (npc.panicSpreadCooldown <= 0) {
+      var nearbyFlee = spatialHash.query(npc.x, npc.y, 60);
+      for (var i = 0; i < nearbyFlee.length; i++) {
+        var n = nearbyFlee[i];
+        if (n.id !== npc.id && n.alive && n.state !== STATE.FLEE && n.state !== STATE.FIGHT &&
+            n.faction !== 'bandits' && n.personality !== 'brave') {
+          if (U.rng() < 0.1) {
+            setEmotion(n, 'scared', 0.6, 12);
+            if (n.personality === 'cowardly') n.state = STATE.FLEE;
+          }
+        }
+      }
+      npc.panicSpreadCooldown = 3;
+    }
+    npc.panicSpreadCooldown -= dt;
 
     if (U.dist(npc.x, npc.y, px, py) > 400) {
       npc.state = STATE.IDLE;
+      setEmotion(npc, 'scared', 0.4, 30); // residual fear after fleeing
     }
   }
 
   function updateInvestigateAI(npc, dt, px, py) {
     if (npc.hasTarget) {
       moveToward(npc, npc.targetX, npc.targetY, dt, 0.8);
+
+      // Guards check for player while investigating
+      if (npc.job === 'guard') {
+        var pDist = U.dist(npc.x, npc.y, px, py);
+        var bounty = Game.Player.getState().bounty;
+        var tier = Game.Law.getGuardAlertTier(bounty);
+        if (tier >= 2 && pDist < 250) {
+          npc.state = STATE.PURSUE;
+          npc.lastKnownPlayerX = px;
+          npc.lastKnownPlayerY = py;
+          npc.pursuitTimer = 30;
+          setBark(npc, Game.Law.getArrestCallout());
+          return;
+        }
+        if (npc.barkTimer <= 0 && U.rng() < 0.005) {
+          setBark(npc, U.pick(['Where did they go?', 'Something happened here.', 'Check the area.', 'I can smell trouble.']));
+        }
+      }
+
       if (U.distSq(npc.x, npc.y, npc.targetX, npc.targetY) < 400) {
         npc.state = STATE.IDLE;
         npc.hasTarget = false;
+        if (npc.job === 'guard' && npc.barkTimer <= 0) {
+          setBark(npc, U.pick(['All clear here.', 'Nothing to report.', 'Seems quiet.']));
+        }
       }
     } else {
       npc.state = STATE.IDLE;
     }
   }
 
+  // ─── Movement ─────────────────────────────────────────────────────────────
   function moveToward(npc, tx, ty, dt, speedMod) {
     var dx = tx - npc.x;
     var dy = ty - npc.y;
     var dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 4) {
-      npc.vx = 0; npc.vy = 0;
-      return;
-    }
+    if (dist < 4) { npc.vx = 0; npc.vy = 0; return; }
+
     var spd = npc.speed * (speedMod || 1.0);
+    // Emotion affects speed
+    if (npc.emotion === 'scared') spd *= 1.15;
+    if (npc.emotion === 'happy') spd *= 0.9;
+
     var nx = dx / dist, ny = dy / dist;
     var moveX = nx * spd * dt;
     var moveY = ny * spd * dt;
 
-    // Simple collision
     var HB = 8;
     var testX = npc.x + moveX;
     var testY = npc.y + moveY;
@@ -1405,7 +1803,6 @@ Game.NPC = (function () {
     if (!W.isSolid(tileX, Math.floor(npc.y / TS)) && !W.hasTree(tileX, Math.floor(npc.y / TS))) {
       npc.x = testX;
     } else {
-      // Try perpendicular
       npc.x += (dy > 0 ? 1 : -1) * spd * dt * 0.3;
     }
     if (!W.isSolid(Math.floor(npc.x / TS), tileY) && !W.hasTree(Math.floor(npc.x / TS), tileY)) {
@@ -1414,19 +1811,15 @@ Game.NPC = (function () {
       npc.y += (dx > 0 ? 1 : -1) * spd * dt * 0.3;
     }
 
-    // Clamp to world
     npc.x = U.clamp(npc.x, TS, (W.WORLD_TILES - 1) * TS);
     npc.y = U.clamp(npc.y, TS, (W.WORLD_TILES - 1) * TS);
 
-    // Update facing
-    if (Math.abs(dx) > Math.abs(dy)) {
-      npc.facing = dx > 0 ? 'E' : 'W';
-    } else {
-      npc.facing = dy > 0 ? 'S' : 'N';
-    }
+    if (Math.abs(dx) > Math.abs(dy)) { npc.facing = dx > 0 ? 'E' : 'W'; }
+    else { npc.facing = dy > 0 ? 'S' : 'N'; }
     npc.vx = moveX; npc.vy = moveY;
   }
 
+  // ─── Speech Helpers ────────────────────────────────────────────────────────
   function setBark(npc, text) {
     npc.bark = text;
     npc.barkTimer = 4;
@@ -1437,17 +1830,18 @@ Game.NPC = (function () {
     npc.speechTimer = duration || 3;
   }
 
+  // ─── Bark Content ─────────────────────────────────────────────────────────
   function getWorkBarks(job) {
     switch (job) {
-      case 'farmer': return ['Another long day...', 'Rain would be welcome.', 'The soil is good this year.', 'Back aches something fierce.'];
-      case 'guard': return ['Stay out of trouble.', 'Keep moving.', 'All quiet.', 'Nothing to report.'];
-      case 'blacksmith': return ['*clang clang*', 'Fine steel, this.', 'Need more iron...', 'This edge will hold.'];
-      case 'merchant': return ['Best prices in town!', 'Come, see my wares!', 'Fair deals here!', 'Quality goods!'];
-      case 'tavernKeeper': return ['What can I get you?', 'Ale is fresh today.', 'Welcome, friend.', 'Take a seat.'];
-      case 'woodcutter': return ['Timber!', 'Good oak here.', 'One more tree...', 'These woods are deep.'];
+      case 'farmer': return ['Another long day...', 'Rain would be welcome.', 'The soil is good this year.', 'Back aches something fierce.', 'These fields never rest.'];
+      case 'guard': return ['Stay out of trouble.', 'Keep moving.', 'All quiet.', 'Nothing to report.', 'Eyes on the road.', 'Stay sharp.'];
+      case 'blacksmith': return ['*clang clang*', 'Fine steel, this.', 'Need more iron...', 'This edge will hold.', 'The anvil sings today.'];
+      case 'merchant': return ['Best prices in town!', 'Come, see my wares!', 'Fair deals here!', 'Quality goods, honest price!'];
+      case 'tavernKeeper': return ['What can I get you?', 'Ale is fresh today.', 'Welcome, friend.', 'Take a seat.', 'Warm fire, cold ale.'];
+      case 'woodcutter': return ['Timber!', 'Good oak here.', 'One more tree...', 'These woods are deep.', 'My axe needs sharpening.'];
       case 'carpenter': return ['Measure twice, cut once.', 'This join needs a tighter fit.', '*scrape scrape*', 'A sturdy beam starts with straight grain.'];
-      case 'mason': return ['Stone on stone.', 'Keep the line true.', '*tap tap*', 'This mortar should set by dusk.'];
-      case 'fisherman': return ['Nets up!', 'Good catch today.', 'Mind the hooks.', 'River is generous this morning.'];
+      case 'mason': return ['Stone on stone.', 'Keep the line true.', '*tap tap*', 'This mortar should set by dusk.', 'Solid work, this.'];
+      case 'fisherman': return ['Nets up!', 'Good catch today.', 'Mind the hooks.', 'River is generous this morning.', 'Fish are running.'];
       case 'baker': return ['Need more flour.', 'These loaves are rising well.', 'Oven heat is perfect.', 'Bread for the whole square.'];
       case 'tailor': return ['Fine stitching takes patience.', 'Hold still for measurements.', '*snip snip*', 'This seam needs reinforcing.'];
       case 'butcher': return ['Sharp blade, clean cut.', 'Nothing goes to waste.', 'Order for the tavern next.', 'Need fresh salt for curing.'];
@@ -1458,21 +1852,31 @@ Game.NPC = (function () {
   }
 
   function getSocialBarks(npc) {
-    var barks = ['Have you heard the news?', 'Weather is turning.', 'Times are tough.', 'Stay safe out there.'];
-    // Add rumor-based barks
+    var barks = ['Have you heard the news?', 'Weather is turning.', 'Times are tough.', 'Stay safe out there.', 'Long day today.'];
+
+    // Crime gossip
     if (Game.Law && Game.Law.getRecentCrimes) {
       var crimes = Game.Law.getRecentCrimes();
       if (crimes.length > 0) {
         barks.push('Did you hear about the trouble?');
         barks.push('Someone committed a crime recently...');
-        barks.push('The guards are on alert.');
+        barks.push('The guards are on alert, I hear.');
+        barks.push('I do not feel safe out here lately.');
       }
     }
 
+    // Gossip from memory
+    if (npc.gossipMemory && npc.gossipMemory.length > 0) {
+      barks.push('Word has it something bad happened nearby.');
+      barks.push('People have been talking... stay careful.');
+    }
+
     if (npc.lifestyle === 'family') barks.push('I should get home to my family soon.', 'Family comes first.');
-    if (npc.lifestyle === 'ambitious') barks.push('One day I will rise above this station.', 'There is always a better opportunity.');
+    if (npc.lifestyle === 'ambitious') barks.push('One day I will rise above this station.', 'There is always opportunity for those who look.');
     if (npc.lifestyle === 'devout') barks.push('May the gods watch over us.', 'I keep to my prayers and my work.');
     if (npc.lifestyle === 'outdoorsy') barks.push('The fresh air clears the mind.', 'I would rather be in the wilds than inside.');
+    if (npc.lifestyle === 'scholarly') barks.push('There is always more to learn.', 'A wise person learns from everyone.');
+    if (npc.lifestyle === 'community') barks.push('Look after your neighbors.', 'We are stronger together.');
 
     if (npc.relationships && npc.relationships.length > 0 && U.rng() < 0.3) {
       var rel = U.pick(npc.relationships);
@@ -1481,11 +1885,16 @@ Game.NPC = (function () {
         if (rel.type === 'friend') barks.push(other.name.first + ' is good company.');
         if (rel.type === 'rival') barks.push('I still do not trust ' + other.name.first + '.');
         if (rel.type === 'family') barks.push('I should check in on ' + other.name.first + '.');
+        if (rel.type === 'coworker') barks.push(other.name.first + ' works hard, I will give them that.');
       }
     }
 
+    if (npc.emotion === 'scared') barks = ['Something is very wrong here.', 'I do not like this.', 'Stay alert.', 'Did you hear that?'];
+    if (npc.emotion === 'angry') barks = ['Someone is going to pay for this.', 'I have had enough.', 'This is outrageous.'];
+    if (npc.emotion === 'happy') barks = ['What a fine day!', 'I feel good today.', 'Life is good sometimes.', 'A moment to enjoy.'];
+
     if (npc.faction === 'bandits') {
-      barks = ['When is the next raid?', 'I need more coin.', 'Lothar says we move at dawn.', 'This forest hides us well.'];
+      barks = ['When is the next raid?', 'I need more coin.', 'Lothar says we move at dawn.', 'This forest hides us well.', 'Keep your eyes open.'];
     }
     return barks;
   }
@@ -1493,7 +1902,7 @@ Game.NPC = (function () {
   function getAwarenessBarks(npc, hour) {
     var barks = [];
     if (hour >= 20 || hour < 5) {
-      barks.push('Dark out tonight.', 'I should head home.', 'Strange hour to be about.');
+      barks.push('Dark out tonight.', 'I should head home.', 'Strange hour to be about.', 'Watch yourself in the dark.');
     } else if (hour < 8) {
       barks.push('Early riser, eh?', 'Morning.', 'Dawn breaks.');
     } else {
@@ -1509,55 +1918,33 @@ Game.NPC = (function () {
     } else if (pRep > 20) {
       barks.push('Good to see you.', 'You are well-known around here.', 'A friend of the people.');
     }
+    // Reaction to player wounds
+    if (Game.Player.getState().bleeding > 0) {
+      barks.push('You are bleeding - see the healer!', 'Those wounds need tending.', 'By the saints, are you alright?');
+    }
+    // Reaction to crime gossip
+    if (npc.gossipMemory && npc.gossipMemory.length > 0 && U.rng() < 0.3) {
+      barks.push('I have heard some troubling things.', 'Stay safe - there has been trouble.', 'The guards should know about this.');
+    }
     return barks.length > 0 ? barks : ['...'];
   }
 
-
-
-  function getActivityLabel(npc) {
-    if (!npc || !npc.alive) return '';
-    if (npc.state === STATE.SLEEP) return 'Sleeping at home';
-    if (npc.state === STATE.WORK) return 'Working as ' + getJobLabel(npc.job);
-    if (npc.state === STATE.PATROL) return 'On patrol duty';
-    if (npc.state === STATE.TRAVEL) return npc.scheduledTarget === 'work' ? 'Going to work' : 'Heading home';
-    if (npc.state === STATE.SOCIALIZE) return 'Socializing';
-    if (npc.state === STATE.FIGHT) return 'In combat';
-    if (npc.state === STATE.FLEE) return 'Fleeing';
-    return 'At home';
-  }
-
-  function getNearPlayer(radius) {
-    var p = Game.Player.getState();
-    return spatialHash.query(p.x, p.y, radius);
-  }
-
-  function getNearest(x, y, radius) {
-    return spatialHash.query(x, y, radius);
-  }
-
+  // ─── Damage & Reactions ────────────────────────────────────────────────────
   function takeDamage(npc, amount, fromPlayer) {
     if (npc.hitCooldown > 0) return 0;
     var actual = amount;
-    if (npc.blocking) {
-      actual *= 0.25;
-    }
+    if (npc.blocking) actual *= 0.25;
     actual = Math.max(1, Math.round(actual * (1 - npc.armor * 0.01)));
     npc.health -= actual;
     npc.hitCooldown = 0.3;
 
-    // Bleeding
-    if (actual > 10 && U.rng() < 0.25) {
-      npc.bleeding += 2;
-    }
-
-    // Hit flash on NPC (mark for renderer)
+    if (actual > 10 && U.rng() < 0.25) npc.bleeding += 2;
     npc.hitFlashTimer = 0.12;
 
-    // Blood particle spray
     if (Game.Renderer && actual > 4) {
       var cnt = Math.min(8, Math.floor(actual / 4));
       for (var bi = 0; bi < cnt; bi++) {
-        Game.Renderer.spawnParticle(npc.x + (Math.random()-0.5)*8, npc.y - 8, 'blood');
+        Game.Renderer.spawnParticle(npc.x + (Math.random() - 0.5) * 8, npc.y - 8, 'blood');
       }
     }
 
@@ -1565,13 +1952,13 @@ Game.NPC = (function () {
       npc.health = 0;
       npc.alive = false;
       npc.state = STATE.DEAD;
-      if (fromPlayer) {
-        Game.Player.getState().killCount++;
-      }
+      if (fromPlayer) Game.Player.getState().killCount++;
+      triggerMourningNearby(npc);
     } else {
-      // React
       if (fromPlayer) {
         npc.playerRelation -= 30;
+        setEmotion(npc, npc.personality === 'brave' ? 'angry' : 'scared', 0.9, 20);
+
         if (npc.state !== STATE.FIGHT && npc.state !== STATE.FLEE) {
           if (npc.personality === 'cowardly' || npc.health < npc.maxHealth * 0.3) {
             npc.state = STATE.FLEE;
@@ -1580,58 +1967,115 @@ Game.NPC = (function () {
             npc.combatTarget = 'player';
           }
         }
-        // Alert nearby NPCs
-        var nearby = spatialHash.query(npc.x, npc.y, 200);
+
+        // Alert nearby NPCs with group panic
+        var nearby = spatialHash.query(npc.x, npc.y, 220);
         for (var i = 0; i < nearby.length; i++) {
           var n = nearby[i];
           if (n.id !== npc.id && n.alive) {
             n.alarmed = true;
-            n.alarmTimer = 10;
+            n.alarmTimer = 12;
             if (n.job === 'guard') {
-              n.state = STATE.FIGHT;
-              n.combatTarget = 'player';
-              setBark(n, 'To arms! Defend the people!');
+              if (n.state !== STATE.FIGHT && n.state !== STATE.PURSUE) {
+                n.state = STATE.FIGHT;
+                n.combatTarget = 'player';
+                setBark(n, U.pick(['To arms! Defend the people!', 'Criminal! Stop them!', 'Attack!']));
+              }
             } else if (n.personality !== 'hostile' && n.faction !== 'bandits') {
-              n.state = STATE.FLEE;
-              setBark(n, 'Help! Murder!');
+              // Panic contagion: scared NPCs can spread fear
+              if (n.panicSpreadCooldown <= 0) {
+                setEmotion(n, 'scared', 0.7, 20);
+                n.panicSpreadCooldown = 4;
+                if (n.state !== STATE.FLEE && n.state !== STATE.FIGHT) {
+                  if (U.rng() < 0.6) {
+                    n.state = STATE.FLEE;
+                    setBark(n, U.pick(['Run!', 'Help! Murder!', 'Get away!', 'Gods, no!']));
+                  } else {
+                    n.state = STATE.SCARED;
+                    if (n.barkTimer <= 0) setBark(n, U.pick(['Help!', 'Someone help!', 'No!']));
+                  }
+                }
+              }
             }
           }
+        }
+
+        // If a guard was injured, escalate globally
+        if (npc.job === 'guard') {
+          callGuardBackup(npc, false);
+          setBark(npc, U.pick(['Guard down!', 'I am hit!', 'Officer needs help!']));
         }
       }
     }
     return actual;
   }
 
+  // ─── Memory ───────────────────────────────────────────────────────────────
   function addMemory(npc, event) {
     npc.memory.push({ event: event, time: Game.time || 0 });
-    if (npc.memory.length > 10) npc.memory.shift();
+    if (npc.memory.length > 15) npc.memory.shift();
+
+    // Also store crime-related memories in gossipMemory for spreading
+    if (event.type === 'witnessedCrime' || event.type === 'heardAboutCrime') {
+      npc.gossipMemory = npc.gossipMemory || [];
+      npc.gossipMemory.push(event);
+      if (npc.gossipMemory.length > 8) npc.gossipMemory.shift();
+    }
   }
 
-  function getNPCs() { return npcs; }
-  function getByFaction(faction) {
-    return npcs.filter(function (n) { return n.faction === faction && n.alive; });
+  // ─── Activity Label ────────────────────────────────────────────────────────
+  function getActivityLabel(npc) {
+    if (!npc || !npc.alive) return '';
+    if (npc.state === STATE.SLEEP) return 'Sleeping';
+    if (npc.state === STATE.WORK) return 'Working as ' + getJobLabel(npc.job);
+    if (npc.state === STATE.PATROL) return 'On patrol';
+    if (npc.state === STATE.TRAVEL) return npc.scheduledTarget === 'work' ? 'Going to work' : 'Heading home';
+    if (npc.state === STATE.SOCIALIZE) return 'Socializing';
+    if (npc.state === STATE.FIGHT) return 'In combat';
+    if (npc.state === STATE.FLEE) return 'Fleeing';
+    if (npc.state === STATE.WARN) return 'Issuing a warning';
+    if (npc.state === STATE.PURSUE) return 'In pursuit';
+    if (npc.state === STATE.SCARED) return 'Frightened';
+    if (npc.state === STATE.MOURN) return 'In distress';
+    if (npc.state === STATE.INVESTIGATE) return 'Investigating';
+    if (npc.state === STATE.ARRESTED) return 'Under arrest';
+    return 'At ease';
   }
+
+  // ─── Public Accessors ──────────────────────────────────────────────────────
+  function getNearPlayer(radius) {
+    var p = Game.Player.getState();
+    return spatialHash.query(p.x, p.y, radius);
+  }
+
+  function getNearest(x, y, radius) { return spatialHash.query(x, y, radius); }
+  function getNPCs() { return npcs; }
+  function getByFaction(faction) { return npcs.filter(function (n) { return n.faction === faction && n.alive; }); }
 
   function getSerializable() {
     return npcs.map(function (n) {
       return {
         id: n.id, x: n.x, y: n.y, health: n.health, alive: n.alive,
         state: n.state, playerRelation: n.playerRelation, memory: n.memory,
+        gossipMemory: n.gossipMemory || [],
         bleeding: n.bleeding, bounty: n.bounty || 0,
-        lifestyle: n.lifestyle, relationships: n.relationships
+        lifestyle: n.lifestyle, relationships: n.relationships,
+        emotion: n.emotion, emotionTimer: n.emotionTimer
       };
     });
   }
 
   function loadState(data) {
     for (var i = 0; i < data.length && i < npcs.length; i++) {
-      var d = data[i];
-      var n = npcs[i];
+      var d = data[i], n = npcs[i];
       n.x = d.x; n.y = d.y; n.health = d.health; n.alive = d.alive;
       n.state = d.state; n.playerRelation = d.playerRelation;
-      n.memory = d.memory || []; n.bleeding = d.bleeding || 0;
+      n.memory = d.memory || []; n.gossipMemory = d.gossipMemory || [];
+      n.bleeding = d.bleeding || 0;
       n.lifestyle = d.lifestyle || n.lifestyle;
       n.relationships = d.relationships || n.relationships || [];
+      n.emotion = d.emotion || 'neutral';
+      n.emotionTimer = d.emotionTimer || 0;
     }
   }
 
@@ -1641,7 +2085,8 @@ Game.NPC = (function () {
     createNPC: createNPC, getNPCs: getNPCs, getNearPlayer: getNearPlayer,
     getNearest: getNearest, takeDamage: takeDamage,
     addMemory: addMemory, getByFaction: getByFaction,
-    setBark: setBark, setSpeech: setSpeech,
+    setBark: setBark, setSpeech: setSpeech, setEmotion: setEmotion,
+    callGuardBackup: callGuardBackup,
     getJobLabel: getJobLabel,
     getActivityLabel: getActivityLabel,
     getSerializable: getSerializable, loadState: loadState
